@@ -1,0 +1,46 @@
+# Environment variables
+.env
+*.env
+!.env.example
+
+# Backups
+backups/
+*.sql
+*.sql.gz
+*.dump
+
+# Logs
+*.log
+logs/
+apache2/*.log
+mysql/*.log
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.sublime-*
+
+# PHP
+vendor/
+composer.phar
+
+# Node (if used for any tooling)
+node_modules/
+package-lock.json
+yarn.lock
+
+# Application specific
+app/uploads/
+app/cache/
+app/tmp/

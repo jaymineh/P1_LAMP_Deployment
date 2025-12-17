@@ -1,103 +1,583 @@
-# Project 1 - LAMP Stack Deployment
-**Step 1 - Installing Apache & Updating the firewall**
+# LAMP Stack Deployment - Complete Guide
+
+**Production-Ready LAMP Stack on Ubuntu 24.04 LTS**
+
+This guide walks you through deploying a modern, secure, and optimized LAMP (Linux, Apache, MySQL, PHP) stack with SSL encryption, automated backups, monitoring, and a fully functional sample application.
+
 ---
 
-- Ran `sudo apt update` & `sudo apt install apache2` to update the packages on the server and install apache.
+## 📚 Table of Contents
 
-  - Also ran `sudo systemctl status apache2` to verify apache was running in my linux server. See screenshot below.
-![apache running](https://user-images.githubusercontent.com/91850543/158664449-b6297870-3913-4d00-8bc7-2373f8686da1.png)
+1. [Initial Server Setup](#section-1-initial-server-setup)
+2. [Installing Apache Web Server](#section-2-installing-apache-web-server)
+3. [Installing MySQL Database](#section-3-installing-mysql-database)
+4. [Installing PHP](#section-4-installing-php)
+5. [Configuring Virtual Hosts](#section-5-configuring-virtual-hosts)
+6. [Setting up SSL/TLS](#section-6-setting-up-ssltls-with-lets-encrypt)
+7. [Deploying the Sample Application](#section-7-deploying-the-sample-application)
+8. [Setting up Backups and Monitoring](#section-8-setting-up-backups-and-monitoring)
+9. [Performance Tuning](#section-9-performance-tuning)
+10. [Testing and Verification](#section-10-testing-and-verification)
 
-- Modified the network security group from the AWS console to allow inbound traffic to port 80 for HTTP connections. See below screenshot.
-![inbound rules](https://user-images.githubusercontent.com/91850543/158665491-c6b59677-21cf-4083-b586-5705ace372e8.png)
-
-- Ran a curl to check if apache server is reachable. Used `curl http://localhost:80` & `curl http://127.0.0.1:80`. See output below.
-![curling to check http](https://user-images.githubusercontent.com/91850543/158665855-8ca3f568-7103-41fa-8d56-771aea2e2e1e.png)
-
-- Ran `http://54.90.168.4:80` to check if apache was reachable on a browser. see the result below.
-![image](https://github.com/jaymineh/P1_LAMP_Deployment/assets/91850543/6b65ce7f-0896-40f1-b5ee-7f30c12c6031)
-
-
-**Step 2 - Installing MySQL**
 ---
 
-- Ran `sudo apt install mysql-server` to install MySQL server on server. Also ran `sudo mysql_secure_installation` for secure installation (password). Provided a password of MEDIUM strength and saved.
-  - Ran `sudo mysql` to check if I'm able to log into MySQL. See result below.
-![mysql login](https://user-images.githubusercontent.com/91850543/158676582-3da86263-688b-457e-8ed0-d7e09a8c71f7.png)
+## Prerequisites
 
-**Step 3 - Installing PHP**
+Before starting, ensure you have completed:
+
+✅ [Prerequisites Guide](docs/prerequisites.md) - AWS account, EC2 instance, SSH access  
+✅ Ubuntu 24.04 LTS server running  
+✅ SSH access to your server  
+✅ Basic Linux command line knowledge  
+
+**Server Info Used in Examples**:
+- **Public IP**: Replace `YOUR_SERVER_IP` with your actual IP
+- **Domain**: Replace `yourdomain.com` with your actual domain (optional for Sections 1-5)
+
 ---
 
-- Ran `sudo apt install php libapache2-mod-php php-mysql` to install MySQL on my linux server.
+## Section 1: Initial Server Setup
 
-  - After the installation completed, I ran `php -v` to confirm the installed php version. See output below. (PHP version 7.4.3 confirmed)
-![php running](https://user-images.githubusercontent.com/91850543/158677874-079b12af-5f69-4215-ab4b-a585e3eb93f4.png)
+**Objective**: Secure your server with proper user management, SSH hardening, and firewall configuration.
 
-LAMP stack completely installed and fully operational.
+### Why This Matters
 
-**Step 4 - Creating a virtual host for your website using Apache**
----
+Default server configurations are not secure for production use. This section establishes a strong security foundation before installing any services.
 
-- Ran `sudo mkdir /var/www/projectlamp` to create a directory for projectlamp. Used cd to locate directory. See result in below screenshot.
-![image](https://user-images.githubusercontent.com/91850543/158682857-9b480cca-30bb-4bcd-a715-e49a53a9f383.png)
+### Step 1.1: Update the System
 
-- Ran `sudo chown -R $USER:$USER /var/www/projectlamp` to assign directory ownership to current system user.
-![image](https://user-images.githubusercontent.com/91850543/158686542-1bc3b9e8-2704-4134-8c0d-677fdc6ef1ab.png)
+Always start with the latest security patches:
 
-- Ran `sudo vi /etc/apache2/sites-available/projectlamp.conf` to create the projectlamp.conf file. Pasted in the bare-bones config files and saved by pressing `esc` to exit edit mode and `:wq` to write to the config file and quit, saving it upon exit. See result below.
-![image](https://user-images.githubusercontent.com/91850543/158684784-d0e5c6a3-cda7-45f5-8791-632aa25faa61.png)
+```bash
+# Update package lists
+sudo apt update
 
-- Ran `sudo ls /etc/apache2/sites-available` to display the new file in the sites available directory. See output below.
-![sites available](https://user-images.githubusercontent.com/91850543/158685554-21095007-2503-442e-9b23-6a383d6dd8a6.png)
+# Upgrade installed packages
+sudo apt upgrade -y
 
-- Ran `sudo a2ensite projectlamp` to enable the new virtual host. Also ran `sudo a2dissite 000-default` to disable apache's default website. See screenshot below.
-![image](https://user-images.githubusercontent.com/91850543/158686950-899941d8-542b-4883-b888-e287be135152.png)
+# Check Ubuntu version
+lsb_release -a
+```
 
-- Ran `sudo apache2ctl configtest` to ensure my config doesn't have any syntax errors. Also ran `sudo systemctl reload apache2` to reload apache so the changes take effect. See below.
-![image](https://user-images.githubusercontent.com/91850543/158687222-b900a708-3160-4061-80af-5e9435cf88cb.png)
+**Expected output**: Should show Ubuntu 24.04 LTS
 
-- Created an index.html file in /var/www/projectlamp to check if the virtual host works as expected. Generate random HTML code and place in the index.html file, save and reload apache2 for the changes to take effect. See result below, putting in the public IP of the instance with port 80.
+**Why**: Security updates patch vulnerabilities. Always keep your system updated.
 
-![image](https://github.com/jaymineh/P1_LAMP_Deployment/assets/91850543/bc2f6e68-dc02-44d3-abbc-9855ad375e1c)
+### Step 1.2: Create a Non-Root User
 
-**Step 5 - Enable PHP on the website**
----
+**Security Best Practice**: Never use root for daily operations.
 
-- By default on apache, an index.html file will **always** take precedence over an index.php file. This is useful for setting up maintenance pages in PHP applications, by creating a temporary index.html file containing an informative message to visitors. Because this page will take precedence over the index.php page, it will then become the landing page for the application. Once maintenance is over, the index.html is renamed or removed from the document root, bringing back the regular application page.
-  - To change this, we need to modify the /etc/apache2/mods-enabled/dir.conf file by running `sudo vim /etc/apache2/mods-enabled/dir.conf`.
+```bash
+# Create new user
+sudo adduser lampuser
 
-  ```
-  <IfModule mod_dir.c>
-        #Change this:
-        #DirectoryIndex index.html index.cgi index.pl index.php index.xhtml index.htm
-        #To this:
-        DirectoryIndex index.php index.html index.cgi index.pl index.xhtml index.htm
-  </IfModule>
-  ```
+# Add user to sudo group
+sudo usermod -aG sudo lampuser
 
-  - After making changes, use `sudo systemctl reload apache2` to reload to activate changes.
+# Verify user creation
+id lampuser
+```
 
-- Create a new index.php file inside custom web root folder. See screenshot below.
-![sudo vim](https://user-images.githubusercontent.com/91850543/158693615-bb073eac-ad5b-4b34-b020-7aa02e19f6b4.png)
+**Why**: Using root for everything is dangerous. If an attacker compromises root, they have full system control.
 
-  - Pasted below php code inside index.php file
+### Step 1.3: Setup SSH Key Authentication
+
+**Security Best Practice**: Disable password authentication, use SSH keys only.
+
+On your **local machine**:
+
+```bash
+# Generate SSH key pair (if you don't have one)
+ssh-keygen -t rsa -b 4096 -C "your_email@example.com"
+
+# Copy public key to server
+ssh-copy-id lampuser@YOUR_SERVER_IP
+```
+
+On the **server**, test the new connection:
+
+```bash
+# From local machine, test SSH with new user
+ssh lampuser@YOUR_SERVER_IP
+
+# If successful, you should be logged in without password
+```
+
+### Step 1.4: Harden SSH Configuration
+
+**Critical Security Step**: Prevent password-based attacks and root login.
+
+```bash
+# Edit SSH configuration
+sudo nano /etc/ssh/sshd_config
+```
+
+Make these changes:
+
+```bash
+# Find and modify these lines (remove # if commented)
+
+PermitRootLogin no                    # Disable root login
+PasswordAuthentication no             # Disable password auth
+PubkeyAuthentication yes              # Enable key-based auth
+ChallengeResponseAuthentication no    # Disable challenge-response
+UsePAM yes                            # Keep PAM enabled
+X11Forwarding no                      # Disable X11 (not needed)
+MaxAuthTries 3                        # Limit auth attempts
+ClientAliveInterval 300               # Timeout idle sessions (5 min)
+ClientAliveCountMax 2                 # Disconnect after 2 failed keepalives
+
+# Optional: Change SSH port (extra security)
+# Port 2222                           # Uncomment and change if desired
+```
+
+**Apply changes**:
+
+```bash
+# Test configuration
+sudo sshd -t
+
+# Restart SSH service
+sudo systemctl restart sshd
+
+# Verify SSH is running
+sudo systemctl status sshd
+```
+
+**⚠️ Important**: Keep your current SSH session open and test the new connection in a new terminal before logging out!
+
+**Why Each Setting**:
+- `PermitRootLogin no`: Prevents direct root login (attackers often target root)
+- `PasswordAuthentication no`: Keys are much more secure than passwords
+- `MaxAuthTries 3`: Limits brute-force attempts
+- `ClientAliveInterval`: Automatically closes idle sessions
+
+### Step 1.5: Configure UFW Firewall
+
+**Defense Layer**: UFW (Uncomplicated Firewall) adds a local firewall on top of AWS Security Groups.
+
+```bash
+# Check UFW status
+sudo ufw status
+
+# Allow SSH (very important - do this first!)
+sudo ufw allow 22/tcp
+# Or if you changed SSH port: sudo ufw allow 2222/tcp
+
+# Allow HTTP and HTTPS
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+
+# Review rules before enabling
+sudo ufw show added
+
+# Enable firewall
+sudo ufw enable
+
+# Verify status
+sudo ufw status verbose
+```
+
+**Expected output**:
+```
+Status: active
+
+To                         Action      From
+--                         ------      ----
+22/tcp                     ALLOW       Anywhere
+80/tcp                     ALLOW       Anywhere
+443/tcp                    ALLOW       Anywhere
+```
+
+**Why UFW + AWS Security Groups**: Defense in depth - multiple security layers protect better than one.
+
+**⚠️ Critical**: Always allow SSH port BEFORE enabling UFW, or you'll lock yourself out!
+
+### Step 1.6: Install and Configure fail2ban
+
+**Intrusion Prevention**: Automatically ban IPs after failed login attempts.
+
+```bash
+# Install fail2ban
+sudo apt install fail2ban -y
+
+# Create local configuration
+sudo cp /etc/fail2ban/jail.conf /etc/fail2ban/jail.local
+
+# Edit configuration
+sudo nano /etc/fail2ban/jail.local
+```
+
+Find and modify these settings:
+
+```ini
+[DEFAULT]
+# Ban hosts for 10 minutes after 5 failed attempts within 10 minutes
+bantime = 600
+findtime = 600
+maxretry = 5
+
+# Email notifications (optional)
+destemail = your-email@example.com
+sendername = Fail2Ban
+action = %(action_mwl)s
+
+[sshd]
+enabled = true
+port = ssh  # or 2222 if you changed SSH port
+logpath = %(sshd_log)s
+backend = %(sshd_backend)s
+```
+
+**Start fail2ban**:
+
+```bash
+# Enable and start fail2ban
+sudo systemctl enable fail2ban
+sudo systemctl start fail2ban
+
+# Check status
+sudo systemctl status fail2ban
+
+# View current bans
+sudo fail2ban-client status
+sudo fail2ban-client status sshd
+```
+
+**Test fail2ban** (optional):
+
+```bash
+# From another machine, try failed SSH logins
+# After 5 attempts, your IP should be banned
+
+# Check ban list
+sudo fail2ban-client status sshd
+
+# Unban if needed
+sudo fail2ban-client set sshd unbanip YOUR_IP
+```
+
+**Why fail2ban**: Protects against brute-force attacks automatically. An IP making 5 failed SSH attempts gets banned.
+
+### Step 1.7: Configure Automatic Security Updates
+
+**Keep Secure**: Automatically install security updates.
+
+```bash
+# Install unattended-upgrades
+sudo apt install unattended-upgrades -y
+
+# Enable automatic updates
+sudo dpkg-reconfigure -plow unattended-upgrades
+# Select "Yes"
+
+# Configure update settings
+sudo nano /etc/apt/apt.conf.d/50unattended-upgrades
+```
+
+Ensure these lines are uncommented:
 
 ```
-  <?php
-phpinfo();
+Unattended-Upgrade::Allowed-Origins {
+    "${distro_id}:${distro_codename}-security";
+};
+
+Unattended-Upgrade::AutoFixInterruptedDpkg "true";
+Unattended-Upgrade::Automatic-Reboot "false";  // Set true for auto-reboot
 ```
-  - Saved the file with `:wq`.
 
-- Reloaded browser page and got the PHP page below.
-![image](https://github.com/jaymineh/P1_LAMP_Deployment/assets/91850543/94626e36-24b9-4953-b877-f694d7c54979)
+**Why**: Security patches are critical. Automate their installation to stay protected.
 
-- Change default php code back to code in index.html as that is the landing page visitors are supposed to see. Reload apache2 after.
-![image](https://github.com/jaymineh/P1_LAMP_Deployment/assets/91850543/b75d9fda-ffac-4679-854b-eb195d66f9fc)
+### ✅ Section 1 Verification
 
+```bash
+# Check firewall status
+sudo ufw status verbose
 
+# Verify fail2ban is running
+sudo systemctl status fail2ban
 
-**Project 1 Complete. LAMP stack successfully deployed!**
+# Check SSH configuration
+sudo sshd -t
 
+# Verify no root login (should fail)
+ssh root@localhost
 
+# Test lampuser SSH key login (from local machine)
+ssh lampuser@YOUR_SERVER_IP
+```
 
+**Security Checklist**:
+- ✅ Non-root user created with sudo access
+- ✅ SSH key authentication working
+- ✅ Password authentication disabled
+- ✅ Root login disabled
+- ✅ UFW firewall enabled (ports 22, 80, 443)
+- ✅ fail2ban running and monitoring SSH
+- ✅ Automatic security updates configured
 
+**You now have a hardened, secure server!** 🛡️
 
+---
+
+## Section 2: Installing Apache Web Server
+
+**Objective**: Install and configure Apache 2.4.x with modern security settings and performance optimizations.
+
+### Why Apache?
+
+Apache is the most popular web server, known for its reliability, flexibility, and extensive module ecosystem. It's perfect for PHP applications and has excellent documentation.
+
+### Step 2.1: Install Apache
+
+```bash
+# Install Apache
+sudo apt install apache2 -y
+
+# Check version
+apache2 -v
+```
+
+**Expected output**: Apache/2.4.x (Ubuntu)
+
+**Why**: We want Apache 2.4.x for modern features, security, and HTTP/2 support.
+
+### Step 2.2: Verify Apache is Running
+
+```bash
+# Check Apache status
+sudo systemctl status apache2
+
+# Enable Apache to start on boot
+sudo systemctl enable apache2
+
+# Check which port Apache is listening on
+sudo netstat -tlnp | grep apache2
+```
+
+**Should show**: Listening on port 80 (HTTP)
+
+### Step 2.3: Test Apache Locally
+
+```bash
+# Test from the server itself
+curl http://localhost
+
+# Or
+curl http://127.0.0.1
+```
+
+**Expected**: HTML output with "Apache2 Ubuntu Default Page"
+
+### Step 2.4: Test Apache from Browser
+
+Open your web browser and navigate to:
+```
+http://YOUR_SERVER_IP
+```
+
+**You should see**: Apache2 Ubuntu Default Page
+
+![Apache Default Page](https://via.placeholder.com/800x400.png?text=Apache2+Ubuntu+Default+Page)
+
+**Why test both ways**: Local test verifies Apache works; browser test verifies firewall rules allow HTTP traffic.
+
+### Step 2.5: Configure Apache Security
+
+**Enable security modules**:
+
+```bash
+# Enable security modules
+sudo a2enmod headers
+sudo a2enmod ssl
+sudo a2enmod rewrite
+
+# Restart Apache
+sudo systemctl restart apache2
+```
+
+**Edit main Apache configuration**:
+
+```bash
+sudo nano /etc/apache2/conf-available/security.conf
+```
+
+Modify these settings for better security:
+
+```apache
+# Hide Apache version
+ServerTokens Prod
+ServerSignature Off
+
+# Prevent clickjacking
+Header always set X-Frame-Options "SAMEORIGIN"
+
+# Prevent MIME sniffing
+Header always set X-Content-Type-Options "nosniff"
+
+# Enable XSS protection
+Header always set X-XSS-Protection "1; mode=block"
+
+# Referrer policy
+Header always set Referrer-Policy "strict-origin-when-cross-origin"
+```
+
+**Apply configuration**:
+
+```bash
+# Enable security configuration
+sudo a2enconf security
+
+# Test configuration
+sudo apache2ctl configtest
+
+# Should output: Syntax OK
+
+# Restart Apache
+sudo systemctl restart apache2
+```
+
+### Step 2.6: Configure Apache MPM (Performance)
+
+**MPM (Multi-Processing Module)** determines how Apache handles concurrent connections.
+
+**Check current MPM**:
+
+```bash
+apache2ctl -V | grep MPM
+```
+
+**For modern servers, Event MPM is recommended**:
+
+```bash
+# Disable prefork (default for PHP module)
+sudo a2dismod mpm_prefork
+
+# Enable event MPM
+sudo a2enmod mpm_event
+
+# Configure event MPM
+sudo nano /etc/apache2/mods-available/mpm_event.conf
+```
+
+**Recommended settings for 2GB RAM server**:
+
+```apache
+<IfModule mpm_event_module>
+    StartServers             2
+    MinSpareThreads         25
+    MaxSpareThreads         75
+    ThreadLimit             64
+    ThreadsPerChild         25
+    MaxRequestWorkers      150
+    MaxConnectionsPerChild   0
+</IfModule>
+```
+
+**Note**: If using mod_php (covered in Section 4), you'll need mpm_prefork instead. For better performance, use PHP-FPM with mpm_event.
+
+### Step 2.7: Enable Useful Apache Modules
+
+```bash
+# Compression (faster page loads)
+sudo a2enmod deflate
+
+# Caching headers
+sudo a2enmod expires
+
+# Environment variables
+sudo a2enmod env
+
+# MIME type handling
+sudo a2enmod mime
+
+# Directory indexing control
+sudo a2enmod dir
+
+# Verify enabled modules
+apache2ctl -M
+```
+
+### Step 2.8: Configure Compression
+
+Create compression configuration:
+
+```bash
+sudo nano /etc/apache2/conf-available/compression.conf
+```
+
+Add:
+
+```apache
+<IfModule mod_deflate.c>
+    # Compress HTML, CSS, JavaScript, Text, XML and fonts
+    AddOutputFilterByType DEFLATE application/javascript
+    AddOutputFilterByType DEFLATE application/rss+xml
+    AddOutputFilterByType DEFLATE application/vnd.ms-fontobject
+    AddOutputFilterByType DEFLATE application/x-font
+    AddOutputFilterByType DEFLATE application/x-font-opentype
+    AddOutputFilterByType DEFLATE application/x-font-otf
+    AddOutputFilterByType DEFLATE application/x-font-truetype
+    AddOutputFilterByType DEFLATE application/x-font-ttf
+    AddOutputFilterByType DEFLATE application/x-javascript
+    AddOutputFilterByType DEFLATE application/xhtml+xml
+    AddOutputFilterByType DEFLATE application/xml
+    AddOutputFilterByType DEFLATE font/opentype
+    AddOutputFilterByType DEFLATE font/otf
+    AddOutputFilterByType DEFLATE font/ttf
+    AddOutputFilterByType DEFLATE image/svg+xml
+    AddOutputFilterByType DEFLATE image/x-icon
+    AddOutputFilterByType DEFLATE text/css
+    AddOutputFilterByType DEFLATE text/html
+    AddOutputFilterByType DEFLATE text/javascript
+    AddOutputFilterByType DEFLATE text/plain
+    AddOutputFilterByType DEFLATE text/xml
+    
+    # Remove browser bugs (old browsers)
+    BrowserMatch ^Mozilla/4 gzip-only-text/html
+    BrowserMatch ^Mozilla/4\.0[678] no-gzip
+    BrowserMatch \bMSIE !no-gzip !gzip-only-text/html
+    Header append Vary User-Agent
+</IfModule>
+```
+
+**Enable compression**:
+
+```bash
+sudo a2enconf compression
+sudo systemctl restart apache2
+```
+
+**Why compression**: Reduces bandwidth usage by 50-70%, making pages load faster.
+
+### ✅ Section 2 Verification
+
+```bash
+# Check Apache status
+sudo systemctl status apache2
+
+# Verify configuration
+sudo apache2ctl configtest
+
+# Check enabled modules
+apache2ctl -M | grep -E "headers|ssl|rewrite|deflate|expires"
+
+# Test compression
+curl -H "Accept-Encoding: gzip" -I http://localhost
+
+# Check for security headers
+curl -I http://YOUR_SERVER_IP | grep -E "X-Frame-Options|X-Content-Type-Options"
+```
+
+**Apache Checklist**:
+- ✅ Apache 2.4.x installed and running
+- ✅ Starts automatically on boot
+- ✅ Security modules enabled (headers, ssl, rewrite)
+- ✅ Security headers configured
+- ✅ Compression enabled
+- ✅ Server version hidden (ServerTokens Prod)
+- ✅ Accessible from browser
+
+**Apache is now installed and secured!** 🌐
+
+---
