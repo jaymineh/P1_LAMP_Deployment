@@ -2817,3 +2817,2012 @@ sudo chmod 600 /var/www/lampapp/.env
 **The Task Manager application is now deployed and fully functional!** 📋
 
 ---
+
+## Section 8: Setting up Backups and Monitoring
+
+**Objective**: Implement automated MySQL backups and health monitoring for the LAMP stack to ensure data safety and system reliability.
+
+### Why Backups and Monitoring?
+
+**Backups** are essential for:
+- **Data recovery**: Restore data after accidental deletion, corruption, or hardware failure
+- **Disaster recovery**: Recover from ransomware, security breaches, or server failure
+- **Compliance**: Many regulations require regular backups
+- **Peace of mind**: Sleep better knowing your data is safe
+
+**Monitoring** is critical for:
+- **Uptime**: Detect service failures before users notice
+- **Performance**: Identify bottlenecks and degradation
+- **Security**: Detect unusual activity or attacks
+- **Proactive maintenance**: Fix issues before they become critical
+
+### Part A: Backup Setup
+
+### Step 8.1: Review the Backup Script
+
+The repository includes a production-ready backup script at `scripts/backup.sh`.
+
+```bash
+# View the backup script
+cat /home/runner/work/P1_LAMP_Deployment/P1_LAMP_Deployment/scripts/backup.sh | head -80
+```
+
+**What the script does**:
+- Backs up MySQL databases (all or specific database)
+- Compresses backups with gzip
+- Adds timestamp to backup files
+- Implements retention policy (auto-delete old backups)
+- Optional: Uploads to AWS S3 for offsite storage
+- Logs all operations
+- Email notifications on errors
+
+### Step 8.2: Install and Configure Backup Script
+
+```bash
+# Create scripts directory
+sudo mkdir -p /usr/local/scripts
+
+# Copy backup script
+sudo cp /home/runner/work/P1_LAMP_Deployment/P1_LAMP_Deployment/scripts/backup.sh /usr/local/scripts/
+
+# Make executable
+sudo chmod +x /usr/local/scripts/backup.sh
+
+# Verify it's executable
+ls -la /usr/local/scripts/backup.sh
+```
+
+**Expected**: `-rwxr-xr-x` (executable flag set)
+
+### Step 8.3: Create Backup Directory
+
+```bash
+# Create backup directory
+sudo mkdir -p /var/backups/mysql
+
+# Set ownership
+sudo chown root:root /var/backups/mysql
+
+# Set secure permissions (only root can read backups)
+sudo chmod 700 /var/backups/mysql
+
+# Verify
+ls -la /var/backups/ | grep mysql
+```
+
+**Why 700 permissions**: Backups contain sensitive data. Only root should access them.
+
+### Step 8.4: Configure Backup Credentials
+
+**Option 1: MySQL configuration file (recommended)**:
+
+```bash
+# Create MySQL credentials file for automated backups
+sudo nano /root/.my.cnf
+```
+
+**Add**:
+
+```ini
+[client]
+user = root
+password = YOUR_MYSQL_ROOT_PASSWORD
+
+[mysqldump]
+user = root
+password = YOUR_MYSQL_ROOT_PASSWORD
+```
+
+**Replace** `YOUR_MYSQL_ROOT_PASSWORD` with your actual root password from Section 3.
+
+**Set strict permissions**:
+
+```bash
+sudo chmod 600 /root/.my.cnf
+sudo chown root:root /root/.my.cnf
+```
+
+**Why this method**: Credentials are not in the backup script or command line (more secure).
+
+**Option 2: Environment variables in script**:
+
+Edit the backup script to set credentials directly (less secure):
+
+```bash
+sudo nano /usr/local/scripts/backup.sh
+
+# Set these variables:
+DB_USER="root"
+DB_PASSWORD="YOUR_MYSQL_ROOT_PASSWORD"
+```
+
+### Step 8.5: Test Manual Backup
+
+```bash
+# Run backup script manually
+sudo /usr/local/scripts/backup.sh
+
+# Check backup was created
+sudo ls -lh /var/backups/mysql/
+
+# Should show: lampdb_YYYYMMDD_HHMMSS.sql.gz
+
+# Verify backup file is not empty
+sudo ls -lh /var/backups/mysql/*.sql.gz
+```
+
+**Check backup log**:
+
+```bash
+sudo cat /var/log/mysql-backup.log
+```
+
+**Expected**: Success message with backup location and size.
+
+### Step 8.6: Test Backup Restoration (Important!)
+
+**⚠️ Critical**: Always verify backups can be restored!
+
+```bash
+# Create test database
+sudo mysql -u root -p -e "CREATE DATABASE test_restore;"
+
+# List recent backups
+sudo ls -lt /var/backups/mysql/ | head -5
+
+# Restore latest backup to test database (EXAMPLE - adjust filename)
+sudo gunzip < /var/backups/mysql/lampdb_20241217_120000.sql.gz | sudo mysql -u root -p test_restore
+
+# Verify data was restored
+sudo mysql -u root -p -e "USE test_restore; SHOW TABLES; SELECT COUNT(*) FROM tasks;"
+
+# Should show: tasks table with 8+ rows
+
+# Clean up test database
+sudo mysql -u root -p -e "DROP DATABASE test_restore;"
+```
+
+**If restoration works**, your backups are valid! 🎉
+
+### Step 8.7: Set Up Automated Backups with Cron
+
+```bash
+# Edit root's crontab
+sudo crontab -e
+
+# Select your preferred editor (nano is easiest)
+```
+
+**Add this line** (runs daily at 2:00 AM):
+
+```cron
+# Daily MySQL backup at 2 AM
+0 2 * * * /usr/local/scripts/backup.sh >> /var/log/mysql-backup.log 2>&1
+```
+
+**Cron schedule explained**:
+- `0 2 * * *` = At 02:00 every day
+- `>> /var/log/mysql-backup.log` = Append output to log
+- `2>&1` = Redirect errors to same log
+
+**Alternative schedules**:
+
+```cron
+# Every 6 hours
+0 */6 * * * /usr/local/scripts/backup.sh >> /var/log/mysql-backup.log 2>&1
+
+# Twice daily (2 AM and 2 PM)
+0 2,14 * * * /usr/local/scripts/backup.sh >> /var/log/mysql-backup.log 2>&1
+
+# Weekly on Sunday at 3 AM
+0 3 * * 0 /usr/local/scripts/backup.sh >> /var/log/mysql-backup.log 2>&1
+```
+
+**Verify cron job**:
+
+```bash
+# List root's cron jobs
+sudo crontab -l
+
+# Check cron service is running
+sudo systemctl status cron
+```
+
+### Step 8.8: Configure AWS S3 Backup (Optional)
+
+**For offsite backups** (recommended for production):
+
+```bash
+# Install AWS CLI
+sudo apt install awscli -y
+
+# Configure AWS credentials
+sudo aws configure
+# Enter: Access Key ID, Secret Access Key, Region (e.g., us-east-1)
+```
+
+**Edit backup script to enable S3**:
+
+```bash
+sudo nano /usr/local/scripts/backup.sh
+
+# Set these variables:
+S3_BUCKET="your-backup-bucket-name"
+AWS_REGION="us-east-1"
+```
+
+**Create S3 bucket** (if not exists):
+
+```bash
+aws s3 mb s3://your-backup-bucket-name --region us-east-1
+```
+
+**Test S3 upload**:
+
+```bash
+# Run backup (should upload to S3)
+sudo /usr/local/scripts/backup.sh
+
+# Verify in S3
+aws s3 ls s3://your-backup-bucket-name/
+```
+
+**Why S3**: Offsite storage protects against server failure, ransomware, and disasters.
+
+### Part B: Monitoring Setup
+
+### Step 8.9: Review the Health Check Script
+
+```bash
+# View the health check script
+cat /home/runner/work/P1_LAMP_Deployment/P1_LAMP_Deployment/scripts/health-check.sh | head -100
+```
+
+**What the script monitors**:
+- **Services**: Apache, MySQL, PHP-FPM status
+- **Disk space**: Alerts when disk usage > 80%
+- **Database**: Connection test
+- **Apache**: HTTP response check
+- **SSL**: Certificate expiry check
+- **Load average**: System load monitoring
+
+### Step 8.10: Install and Configure Health Check Script
+
+```bash
+# Copy health check script
+sudo cp /home/runner/work/P1_LAMP_Deployment/P1_LAMP_Deployment/scripts/health-check.sh /usr/local/scripts/
+
+# Make executable
+sudo chmod +x /usr/local/scripts/health-check.sh
+
+# Create log file
+sudo touch /var/log/health-check.log
+sudo chmod 644 /var/log/health-check.log
+```
+
+### Step 8.11: Test Health Check Manually
+
+```bash
+# Run health check
+sudo /usr/local/scripts/health-check.sh
+
+# Check output (should show green checkmarks for running services)
+# View log
+sudo cat /var/log/health-check.log
+```
+
+**Expected output**:
+```
+✓ apache2 is running
+✓ mysql is running
+✓ Disk usage OK (45% used)
+✓ Database connection OK
+✓ HTTP response OK
+```
+
+### Step 8.12: Configure Email Alerts (Optional)
+
+**Install mail utilities**:
+
+```bash
+# Install mailutils
+sudo apt install mailutils -y
+
+# Test email (you may need to configure SMTP relay)
+echo "Test email from health check" | mail -s "Test Alert" your-email@example.com
+```
+
+**Edit health check script to add email**:
+
+```bash
+sudo nano /usr/local/scripts/health-check.sh
+
+# Set:
+ALERT_EMAIL="your-email@example.com"
+```
+
+**For production**, configure a proper SMTP relay (e.g., SendGrid, AWS SES, Gmail SMTP).
+
+### Step 8.13: Set Up Automated Health Checks with Cron
+
+```bash
+# Edit root's crontab
+sudo crontab -e
+```
+
+**Add this line** (runs every 15 minutes):
+
+```cron
+# Health check every 15 minutes
+*/15 * * * * /usr/local/scripts/health-check.sh >> /var/log/health-check.log 2>&1
+```
+
+**Cron schedule explained**:
+- `*/15 * * * *` = Every 15 minutes
+- Monitors services continuously
+- Alerts quickly if services fail
+
+**Verify**:
+
+```bash
+sudo crontab -l
+```
+
+### Step 8.14: Configure Log Rotation
+
+**Prevent logs from filling up disk space**:
+
+```bash
+# Create logrotate configuration for backup logs
+sudo nano /etc/logrotate.d/mysql-backup
+```
+
+**Add**:
+
+```
+/var/log/mysql-backup.log {
+    weekly
+    rotate 12
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0644 root root
+}
+```
+
+**Create logrotate config for health check**:
+
+```bash
+sudo nano /etc/logrotate.d/health-check
+```
+
+**Add**:
+
+```
+/var/log/health-check.log {
+    daily
+    rotate 30
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0644 root root
+}
+```
+
+**Test logrotate**:
+
+```bash
+# Test backup log rotation
+sudo logrotate -d /etc/logrotate.d/mysql-backup
+
+# Test health check log rotation
+sudo logrotate -d /etc/logrotate.d/health-check
+```
+
+**What this does**:
+- **mysql-backup**: Weekly rotation, keeps 12 weeks (3 months)
+- **health-check**: Daily rotation, keeps 30 days
+- **compress**: Saves disk space
+- **delaycompress**: Doesn't compress most recent rotation
+
+### Step 8.15: Set Up Basic System Monitoring
+
+**Monitor disk space**:
+
+```bash
+# Create disk space check script
+sudo nano /usr/local/scripts/disk-check.sh
+```
+
+**Add**:
+
+```bash
+#!/bin/bash
+
+# Alert threshold (percentage)
+THRESHOLD=80
+
+# Get disk usage percentage (root partition)
+USAGE=$(df -h / | awk 'NR==2 {print $5}' | sed 's/%//')
+
+if [ "$USAGE" -gt "$THRESHOLD" ]; then
+    echo "WARNING: Disk usage is ${USAGE}% (threshold: ${THRESHOLD}%)"
+    # Send alert if mail is configured
+    if command -v mail &> /dev/null; then
+        echo "Disk usage is ${USAGE}%" | mail -s "Disk Space Alert - $(hostname)" root
+    fi
+else
+    echo "Disk usage OK: ${USAGE}%"
+fi
+```
+
+**Make executable**:
+
+```bash
+sudo chmod +x /usr/local/scripts/disk-check.sh
+
+# Test it
+sudo /usr/local/scripts/disk-check.sh
+```
+
+**Add to cron (daily check)**:
+
+```bash
+sudo crontab -e
+
+# Add:
+0 9 * * * /usr/local/scripts/disk-check.sh >> /var/log/disk-check.log 2>&1
+```
+
+### Step 8.16: Monitor Service Logs
+
+**Important log locations**:
+
+```bash
+# Apache logs
+sudo tail -f /var/www/lampapp/logs/error.log
+sudo tail -f /var/www/lampapp/logs/access.log
+
+# PHP logs
+sudo tail -f /var/log/php/error.log
+
+# MySQL logs
+sudo tail -f /var/log/mysql/error.log
+sudo tail -f /var/log/mysql/mysql-slow.log
+
+# System logs
+sudo tail -f /var/log/syslog
+sudo journalctl -u apache2 -f
+sudo journalctl -u mysql -f
+```
+
+**Quick log analysis**:
+
+```bash
+# Count errors in Apache log
+sudo grep -c "error" /var/www/lampapp/logs/error.log
+
+# Show recent MySQL errors
+sudo tail -20 /var/log/mysql/error.log
+
+# Show slow queries
+sudo cat /var/log/mysql/mysql-slow.log
+```
+
+### ✅ Section 8 Verification
+
+```bash
+# Verify backup script exists and is executable
+ls -la /usr/local/scripts/backup.sh
+
+# Verify health check script exists and is executable
+ls -la /usr/local/scripts/health-check.sh
+
+# Check backup directory exists
+ls -la /var/backups/mysql/
+
+# Verify cron jobs are set up
+sudo crontab -l
+
+# Test backup manually
+sudo /usr/local/scripts/backup.sh
+sudo ls -lh /var/backups/mysql/
+
+# Test health check manually
+sudo /usr/local/scripts/health-check.sh
+
+# Check logs exist
+ls -la /var/log/mysql-backup.log
+ls -la /var/log/health-check.log
+
+# Verify logrotate configuration
+ls -la /etc/logrotate.d/ | grep -E "mysql-backup|health-check"
+
+# Check cron service is running
+sudo systemctl status cron
+
+# Count number of backups
+sudo ls -1 /var/backups/mysql/*.sql.gz | wc -l
+```
+
+**Backup & Monitoring Checklist**:
+- ✅ Backup script installed at /usr/local/scripts/backup.sh
+- ✅ Backup script is executable
+- ✅ Backup directory created (/var/backups/mysql)
+- ✅ MySQL credentials configured for automated backups
+- ✅ Manual backup tested successfully
+- ✅ Backup restoration tested successfully
+- ✅ Automated daily backups configured (cron)
+- ✅ Backup logs configured (/var/log/mysql-backup.log)
+- ✅ Health check script installed
+- ✅ Health check script is executable
+- ✅ Health check tested manually
+- ✅ Automated health checks configured (every 15 min)
+- ✅ Health check logs configured
+- ✅ Log rotation configured for backup logs
+- ✅ Log rotation configured for health check logs
+- ✅ Disk space monitoring configured
+
+**Optional (recommended for production)**:
+- ✅ AWS S3 backups configured (offsite storage)
+- ✅ Email alerts configured
+- ✅ SMTP relay configured for notifications
+
+**Your backups and monitoring are now in place!** 🔄📊
+
+---
+
+## Section 9: Performance Tuning
+
+**Objective**: Optimize Apache, PHP-FPM, MySQL, and system settings for maximum performance and efficiency.
+
+### Why Performance Tuning?
+
+**Performance tuning provides**:
+- **Faster response times**: Pages load quicker for users
+- **Higher capacity**: Handle more concurrent users
+- **Better resource utilization**: Use available RAM and CPU efficiently
+- **Cost savings**: Get more from existing hardware
+- **Improved user experience**: Speed equals satisfaction
+
+**Important**: Performance tuning is iterative. Monitor, measure, adjust, and repeat.
+
+### Part A: Apache Performance Tuning
+
+### Step 9.1: Review Current Apache MPM Settings
+
+We configured Event MPM in Section 2. Let's optimize it further.
+
+```bash
+# Check current MPM
+apache2ctl -V | grep MPM
+
+# View current MPM configuration
+sudo cat /etc/apache2/mods-available/mpm_event.conf
+```
+
+### Step 9.2: Optimize Apache MPM Event
+
+```bash
+# Edit MPM event configuration
+sudo nano /etc/apache2/mods-available/mpm_event.conf
+```
+
+**Optimized settings for 2GB RAM server**:
+
+```apache
+<IfModule mpm_event_module>
+    # Initial server processes
+    StartServers             3
+    
+    # Minimum and maximum idle threads
+    MinSpareThreads         25
+    MaxSpareThreads         75
+    
+    # Thread configuration
+    ThreadLimit             64
+    ThreadsPerChild         25
+    
+    # Maximum simultaneous connections
+    # Formula: MaxRequestWorkers = (Total RAM - 512MB for OS/MySQL) / Average Apache Process Size
+    # For 2GB RAM: (1536MB) / 10MB ≈ 150
+    MaxRequestWorkers      150
+    
+    # Maximum requests per child process (prevents memory leaks)
+    # 0 = unlimited (use non-zero for production)
+    MaxConnectionsPerChild  1000
+    
+    # Asynchronous support
+    AsyncRequestWorkerFactor 2
+</IfModule>
+```
+
+**Settings explained**:
+- **StartServers**: Initial processes on startup (2-3 for small servers)
+- **MinSpareThreads**: Always keep at least this many idle threads ready
+- **MaxSpareThreads**: Don't keep more than this many idle threads
+- **ThreadsPerChild**: Each worker process handles this many threads
+- **MaxRequestWorkers**: Total maximum concurrent connections
+- **MaxConnectionsPerChild**: Recycle worker after this many requests (prevents memory leaks)
+
+**For 4GB RAM server**, increase:
+```apache
+StartServers            4
+MaxSpareThreads         100
+MaxRequestWorkers       300
+```
+
+**Restart Apache**:
+
+```bash
+sudo apache2ctl configtest
+sudo systemctl restart apache2
+```
+
+### Step 9.3: Enable HTTP/2
+
+**HTTP/2** provides significant performance improvements over HTTP/1.1.
+
+```bash
+# Enable HTTP/2 module
+sudo a2enmod http2
+
+# Edit SSL virtual host
+sudo nano /etc/apache2/sites-available/lampapp-le-ssl.conf
+```
+
+**Add after `<VirtualHost *:443>`**:
+
+```apache
+    # Enable HTTP/2
+    Protocols h2 http/1.1
+```
+
+**Restart Apache**:
+
+```bash
+sudo systemctl restart apache2
+```
+
+**Test HTTP/2**:
+
+```bash
+curl -I --http2 https://yourdomain.com | grep -i "HTTP/2"
+
+# Should show: HTTP/2 200
+```
+
+**Why HTTP/2**: Multiplexing, header compression, server push = faster page loads.
+
+### Step 9.4: Configure KeepAlive Settings
+
+**KeepAlive** reuses TCP connections for multiple requests.
+
+```bash
+# Edit Apache configuration
+sudo nano /etc/apache2/apache2.conf
+```
+
+**Find and modify**:
+
+```apache
+# KeepAlive: Enable persistent connections
+KeepAlive On
+
+# KeepAliveTimeout: How long to wait for next request (seconds)
+# Lower = save memory, Higher = faster for multiple requests
+KeepAliveTimeout 5
+
+# MaxKeepAliveRequests: Max requests per connection
+# Higher = better performance for page with many resources
+MaxKeepAliveRequests 100
+```
+
+**Settings explained**:
+- **KeepAlive On**: Reuse connections (recommended)
+- **KeepAliveTimeout 5**: Wait 5 seconds for next request
+- **MaxKeepAliveRequests 100**: Allow up to 100 requests per connection
+
+**Restart Apache**:
+
+```bash
+sudo systemctl restart apache2
+```
+
+### Step 9.5: Enable Browser Caching
+
+We configured basic caching in Section 5. Let's enhance it.
+
+```bash
+sudo nano /etc/apache2/conf-available/caching.conf
+```
+
+**Add**:
+
+```apache
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresDefault "access plus 1 month"
+    
+    # Images
+    ExpiresByType image/jpg "access plus 1 year"
+    ExpiresByType image/jpeg "access plus 1 year"
+    ExpiresByType image/gif "access plus 1 year"
+    ExpiresByType image/png "access plus 1 year"
+    ExpiresByType image/webp "access plus 1 year"
+    ExpiresByType image/svg+xml "access plus 1 year"
+    ExpiresByType image/x-icon "access plus 1 year"
+    
+    # Video
+    ExpiresByType video/mp4 "access plus 1 year"
+    ExpiresByType video/webm "access plus 1 year"
+    
+    # Fonts
+    ExpiresByType font/ttf "access plus 1 year"
+    ExpiresByType font/otf "access plus 1 year"
+    ExpiresByType font/woff "access plus 1 year"
+    ExpiresByType font/woff2 "access plus 1 year"
+    ExpiresByType application/font-woff "access plus 1 year"
+    
+    # CSS and JavaScript
+    ExpiresByType text/css "access plus 1 month"
+    ExpiresByType text/javascript "access plus 1 month"
+    ExpiresByType application/javascript "access plus 1 month"
+    ExpiresByType application/x-javascript "access plus 1 month"
+    
+    # Documents
+    ExpiresByType application/pdf "access plus 1 month"
+    
+    # HTML (short cache for dynamic content)
+    ExpiresByType text/html "access plus 1 hour"
+</IfModule>
+
+<IfModule mod_headers.c>
+    # Add Cache-Control headers
+    <FilesMatch "\.(jpg|jpeg|png|gif|webp|svg|ico|pdf|flv|mp4|webm)$">
+        Header set Cache-Control "max-age=31536000, public"
+    </FilesMatch>
+    
+    <FilesMatch "\.(css|js|woff|woff2|ttf|otf)$">
+        Header set Cache-Control "max-age=2592000, public"
+    </FilesMatch>
+    
+    <FilesMatch "\.(html|htm)$">
+        Header set Cache-Control "max-age=3600, public, must-revalidate"
+    </FilesMatch>
+</IfModule>
+```
+
+**Enable and restart**:
+
+```bash
+sudo a2enconf caching
+sudo systemctl restart apache2
+```
+
+### Part B: PHP-FPM Performance Tuning
+
+### Step 9.6: Optimize PHP-FPM Pool Settings
+
+```bash
+# Edit PHP-FPM pool configuration
+sudo nano /etc/php/8.3/fpm/pool.d/www.conf
+```
+
+**Optimize for 2GB RAM server**:
+
+```ini
+[www]
+user = www-data
+group = www-data
+
+listen = /run/php/php8.3-fpm.sock
+listen.owner = www-data
+listen.group = www-data
+listen.mode = 0660
+
+; Process Manager (dynamic = spawn based on demand)
+pm = dynamic
+
+; Maximum children (concurrent PHP requests)
+; Formula: (Available RAM for PHP) / (Average PHP process size)
+; For 2GB: 512MB / 30MB ≈ 15-20
+pm.max_children = 20
+
+; Processes started on boot
+pm.start_servers = 3
+
+; Minimum idle processes
+pm.min_spare_servers = 2
+
+; Maximum idle processes
+pm.max_spare_servers = 5
+
+; Maximum requests before recycling worker
+pm.max_requests = 500
+
+; Kill idle processes after 10 seconds
+pm.process_idle_timeout = 10s
+
+; Maximum request time (should match php.ini max_execution_time)
+request_terminate_timeout = 30s
+
+; Status page (for monitoring)
+pm.status_path = /php-fpm-status
+
+; Ping page (for health checks)
+ping.path = /php-fpm-ping
+ping.response = pong
+
+; Slow request log
+slowlog = /var/log/php-fpm/slow.log
+request_slowlog_timeout = 5s
+```
+
+**For 4GB RAM server**, increase:
+```ini
+pm.max_children = 40
+pm.start_servers = 5
+pm.min_spare_servers = 3
+pm.max_spare_servers = 8
+```
+
+**Create slow log directory**:
+
+```bash
+sudo mkdir -p /var/log/php-fpm
+sudo chown www-data:www-data /var/log/php-fpm
+```
+
+**Restart PHP-FPM**:
+
+```bash
+# Test configuration
+sudo php-fpm8.3 -t
+
+# Restart
+sudo systemctl restart php8.3-fpm
+
+# Check status
+sudo systemctl status php8.3-fpm
+```
+
+### Step 9.7: Optimize OPcache Settings
+
+**OPcache** caches compiled PHP code for huge performance gains.
+
+```bash
+# Edit PHP configuration
+sudo nano /etc/php/8.3/fpm/php.ini
+```
+
+**Find and optimize opcache section**:
+
+```ini
+[opcache]
+; Enable OPcache
+opcache.enable = 1
+opcache.enable_cli = 1
+
+; Memory allocation (increase for more PHP files)
+opcache.memory_consumption = 256
+
+; String interning buffer
+opcache.interned_strings_buffer = 16
+
+; Maximum cached files (increase for large applications)
+opcache.max_accelerated_files = 10000
+
+; Revalidate files every 2 seconds (production: 60+)
+opcache.revalidate_freq = 60
+
+; Enable fast shutdown
+opcache.fast_shutdown = 1
+
+; Validate timestamps (production: set to 0 for max performance)
+opcache.validate_timestamps = 1
+
+; Save comments for compatibility
+opcache.save_comments = 1
+
+; JIT compilation (PHP 8.0+)
+opcache.jit_buffer_size = 100M
+opcache.jit = 1255
+```
+
+**Settings explained**:
+- **opcache.memory_consumption**: RAM for cached code
+- **opcache.max_accelerated_files**: Max cached files (must be > number of PHP files)
+- **opcache.revalidate_freq**: Check for file changes every N seconds
+- **opcache.validate_timestamps = 0**: (Production) Never check for file changes = max speed
+- **opcache.jit**: Just-In-Time compiler for even better performance
+
+**Restart PHP-FPM**:
+
+```bash
+sudo systemctl restart php8.3-fpm
+```
+
+**Verify OPcache**:
+
+```bash
+# Check OPcache status
+php -i | grep opcache
+```
+
+### Step 9.8: Optimize PHP Memory Settings
+
+```bash
+sudo nano /etc/php/8.3/fpm/php.ini
+```
+
+**Adjust memory settings**:
+
+```ini
+; Execution limits
+max_execution_time = 30
+max_input_time = 60
+memory_limit = 256M
+
+; Upload limits
+post_max_size = 32M
+upload_max_filesize = 32M
+
+; Realpath cache (faster file includes)
+realpath_cache_size = 4M
+realpath_cache_ttl = 600
+```
+
+**Restart PHP-FPM**:
+
+```bash
+sudo systemctl restart php8.3-fpm
+```
+
+### Part C: MySQL Performance Tuning
+
+### Step 9.9: Optimize InnoDB Buffer Pool
+
+**Most important MySQL setting**: InnoDB buffer pool size.
+
+```bash
+sudo nano /etc/mysql/mysql.conf.d/custom.cnf
+```
+
+**Optimize for 2GB RAM**:
+
+```ini
+[mysqld]
+# InnoDB Settings
+# Buffer pool: 50-70% of RAM dedicated to MySQL
+# For 2GB total, 1GB for MySQL: 512-700MB for buffer pool
+innodb_buffer_pool_size = 512M
+
+# Buffer pool instances (1 instance per GB, max 8)
+innodb_buffer_pool_instances = 1
+
+# Log file size (25% of buffer pool size)
+innodb_log_file_size = 128M
+
+# Flush method (avoid double buffering)
+innodb_flush_method = O_DIRECT
+
+# Flush log at transaction commit
+# 1 = safest (flush every commit)
+# 2 = better performance (flush every second, acceptable risk)
+innodb_flush_log_at_trx_commit = 2
+
+# File per table (recommended)
+innodb_file_per_table = 1
+
+# I/O capacity (adjust based on storage: HDD=200, SSD=2000+)
+innodb_io_capacity = 2000
+innodb_io_capacity_max = 4000
+```
+
+**For 4GB RAM server**:
+```ini
+innodb_buffer_pool_size = 1G
+innodb_buffer_pool_instances = 1
+innodb_log_file_size = 256M
+```
+
+### Step 9.10: Optimize MySQL Connection Settings
+
+**Add to custom.cnf**:
+
+```ini
+# Connection Settings
+max_connections = 150
+max_connect_errors = 1000000
+connect_timeout = 10
+wait_timeout = 600
+interactive_timeout = 600
+
+# Thread Settings
+thread_cache_size = 16
+thread_stack = 256K
+
+# Table Settings
+table_open_cache = 4000
+table_definition_cache = 2000
+open_files_limit = 65535
+
+# Query Cache (disabled in MySQL 8.0+)
+# Removed in MySQL 8.0 - use application-level caching instead
+```
+
+### Step 9.11: Optimize MySQL Temporary Tables
+
+```ini
+# Temporary Tables
+tmp_table_size = 64M
+max_heap_table_size = 64M
+
+# Sort and Join Buffers
+sort_buffer_size = 2M
+join_buffer_size = 2M
+read_buffer_size = 2M
+read_rnd_buffer_size = 4M
+```
+
+### Step 9.12: Enable MySQL Slow Query Log
+
+```ini
+# Slow Query Log (identify slow queries)
+slow_query_log = 1
+slow_query_log_file = /var/log/mysql/mysql-slow.log
+long_query_time = 2
+log_queries_not_using_indexes = 1
+```
+
+**Restart MySQL**:
+
+```bash
+# Test configuration
+sudo mysqld --validate-config
+
+# Restart MySQL
+sudo systemctl restart mysql
+
+# Verify MySQL started
+sudo systemctl status mysql
+```
+
+### Step 9.13: Verify MySQL Performance
+
+```bash
+# Login to MySQL
+sudo mysql -u root -p
+```
+
+```sql
+-- Check buffer pool size
+SHOW VARIABLES LIKE 'innodb_buffer_pool_size';
+
+-- Check connections
+SHOW VARIABLES LIKE 'max_connections';
+
+-- Check temporary table settings
+SHOW VARIABLES LIKE 'tmp_table_size';
+
+-- Show current status
+SHOW STATUS LIKE 'Threads_connected';
+SHOW STATUS LIKE 'Innodb_buffer_pool%';
+
+-- Exit
+EXIT;
+```
+
+### Part D: System-Level Optimizations
+
+### Step 9.14: Optimize Swap Configuration
+
+**Check current swap**:
+
+```bash
+# View swap status
+free -h
+swapon --show
+```
+
+**Optimize swappiness** (how aggressively Linux uses swap):
+
+```bash
+# Check current swappiness
+cat /proc/sys/vm/swappiness
+
+# Set swappiness (0-100, lower = use swap less)
+# 10 = only use swap when RAM is very low
+sudo sysctl vm.swappiness=10
+
+# Make permanent
+echo "vm.swappiness=10" | sudo tee -a /etc/sysctl.conf
+```
+
+**Why**: Lower swappiness keeps active data in RAM for better performance.
+
+### Step 9.15: Optimize File Descriptor Limits
+
+```bash
+# Check current limits
+ulimit -n
+
+# Increase file descriptor limits
+sudo nano /etc/security/limits.conf
+```
+
+**Add**:
+
+```
+*               soft    nofile          65535
+*               hard    nofile          65535
+root            soft    nofile          65535
+root            hard    nofile          65535
+www-data        soft    nofile          65535
+www-data        hard    nofile          65535
+mysql           soft    nofile          65535
+mysql           hard    nofile          65535
+```
+
+**Apply changes** (requires logout/login or reboot):
+
+```bash
+# Or set for current session
+sudo sysctl -w fs.file-max=65535
+```
+
+**Why**: More file descriptors allow more concurrent connections.
+
+### Step 9.16: TCP Tuning for High Traffic
+
+```bash
+sudo nano /etc/sysctl.conf
+```
+
+**Add TCP optimizations**:
+
+```
+# TCP optimizations
+net.core.somaxconn = 65535
+net.ipv4.tcp_max_syn_backlog = 8192
+net.ipv4.tcp_fin_timeout = 15
+net.ipv4.tcp_keepalive_time = 300
+net.ipv4.tcp_keepalive_probes = 5
+net.ipv4.tcp_keepalive_intvl = 15
+```
+
+**Apply settings**:
+
+```bash
+sudo sysctl -p
+```
+
+**Why**: Better handling of concurrent connections and faster connection recycling.
+
+### ✅ Section 9 Verification
+
+```bash
+# Apache verification
+apache2ctl -V | grep MPM
+apache2ctl -M | grep http2
+curl -I --http2 https://yourdomain.com
+
+# PHP-FPM verification
+sudo systemctl status php8.3-fpm
+php -i | grep opcache
+php -i | grep "memory_limit"
+
+# MySQL verification
+sudo mysql -u root -p -e "SHOW VARIABLES LIKE 'innodb_buffer_pool_size';"
+sudo mysql -u root -p -e "SHOW STATUS LIKE 'Threads_connected';"
+
+# System verification
+cat /proc/sys/vm/swappiness
+ulimit -n
+sysctl net.core.somaxconn
+
+# Performance test (optional)
+ab -n 1000 -c 10 https://yourdomain.com/
+```
+
+**Performance Tuning Checklist**:
+- ✅ Apache MPM Event optimized
+- ✅ HTTP/2 enabled
+- ✅ KeepAlive configured
+- ✅ Browser caching configured
+- ✅ PHP-FPM pool settings optimized
+- ✅ OPcache enabled and configured
+- ✅ PHP memory settings optimized
+- ✅ InnoDB buffer pool optimized
+- ✅ MySQL connection settings tuned
+- ✅ MySQL temporary tables optimized
+- ✅ MySQL slow query log enabled
+- ✅ Swap configuration optimized
+- ✅ File descriptor limits increased
+- ✅ TCP settings optimized
+
+**Performance Improvements Expected**:
+- ⚡ 2-5x faster page loads (from OPcache)
+- ⚡ 50-70% bandwidth reduction (from compression + caching)
+- ⚡ 3-10x higher concurrent user capacity
+- ⚡ Lower CPU usage (from caching)
+- ⚡ Lower memory usage (from optimized process limits)
+
+**Your LAMP stack is now performance-tuned!** ⚡
+
+---
+
+## Section 10: Testing and Verification
+
+**Objective**: Perform comprehensive testing, verify all components are working correctly, and ensure the LAMP stack is production-ready.
+
+### Why Comprehensive Testing?
+
+**Testing ensures**:
+- **Functionality**: All features work as expected
+- **Security**: No vulnerabilities or misconfigurations
+- **Performance**: System meets performance requirements
+- **Reliability**: Services are stable and available
+- **Compliance**: Meets best practices and standards
+
+### Part A: Final Comprehensive Checklist
+
+### ✅ Complete System Verification
+
+**Infrastructure & Security**:
+- ✅ Ubuntu 24.04 LTS up to date
+- ✅ Non-root user created with sudo access
+- ✅ SSH key authentication enabled
+- ✅ Password authentication disabled
+- ✅ Root login disabled
+- ✅ UFW firewall enabled (ports 22, 80, 443)
+- ✅ fail2ban running and protecting SSH
+- ✅ Automatic security updates configured
+
+**Apache Web Server**:
+- ✅ Apache 2.4.x installed and running
+- ✅ Event MPM enabled and optimized
+- ✅ HTTP/2 enabled
+- ✅ Security modules enabled (headers, ssl, rewrite)
+- ✅ Security headers configured
+- ✅ Compression enabled
+- ✅ Browser caching configured
+- ✅ Server version hidden
+- ✅ Virtual host configured
+- ✅ Logs configured and rotating
+
+**MySQL Database**:
+- ✅ MySQL 8.0.x installed and running
+- ✅ mysql_secure_installation completed
+- ✅ Root password set and secure
+- ✅ Application database created (lampdb)
+- ✅ Application user created (lampuser)
+- ✅ InnoDB buffer pool optimized
+- ✅ Character set UTF8MB4
+- ✅ Slow query log enabled
+- ✅ Custom configuration applied
+
+**PHP**:
+- ✅ PHP 8.3.x installed
+- ✅ PHP-FPM running and optimized
+- ✅ Essential extensions installed
+- ✅ OPcache enabled and configured
+- ✅ Security settings configured (expose_php off)
+- ✅ Error logging configured
+- ✅ Session security enabled
+- ✅ Apache configured to use PHP-FPM
+
+**SSL/TLS**:
+- ✅ Let's Encrypt certificate installed (or self-signed)
+- ✅ HTTPS working
+- ✅ HTTP → HTTPS redirect configured
+- ✅ Auto-renewal configured and tested
+- ✅ Strong SSL protocols (TLS 1.2+)
+- ✅ HSTS header enabled
+- ✅ SSL Labs grade A or A+
+
+**Application**:
+- ✅ Task Manager deployed
+- ✅ .env configured with database credentials
+- ✅ Database schema imported
+- ✅ Sample data loaded
+- ✅ File permissions correct
+- ✅ CREATE operation working
+- ✅ READ operation working
+- ✅ UPDATE operation working
+- ✅ DELETE operation working
+- ✅ Filtering and search working
+
+**Backups & Monitoring**:
+- ✅ Backup script installed and tested
+- ✅ Automated daily backups configured
+- ✅ Backup restoration tested
+- ✅ Health check script installed and tested
+- ✅ Automated monitoring configured (every 15 min)
+- ✅ Log rotation configured
+- ✅ Offsite backups configured (optional)
+
+**Performance**:
+- ✅ Apache MPM tuned
+- ✅ PHP-FPM pool optimized
+- ✅ MySQL buffer pool sized correctly
+- ✅ OPcache configured
+- ✅ Browser caching enabled
+- ✅ Compression enabled
+- ✅ System limits optimized
+
+### Part B: Testing Procedures
+
+### Step 10.1: Service Status Check
+
+```bash
+# Check all critical services
+sudo systemctl status apache2
+sudo systemctl status mysql
+sudo systemctl status php8.3-fpm
+sudo systemctl status ufw
+sudo systemctl status fail2ban
+sudo systemctl status cron
+
+# Quick all-in-one check
+for service in apache2 mysql php8.3-fpm ufw fail2ban cron; do
+    echo -n "$service: "
+    systemctl is-active $service
+done
+```
+
+**Expected**: All services should show "active (running)"
+
+### Step 10.2: Application Functionality Testing
+
+**Manual testing checklist**:
+
+```bash
+# 1. Access homepage
+curl -I https://yourdomain.com
+# Expected: HTTP/2 200 OK
+
+# 2. Test PHP processing
+curl -s https://yourdomain.com/ | grep -i "task"
+# Expected: Should see "Task Manager" in output
+
+# 3. Test database connectivity (create test endpoint)
+```
+
+**In browser, test each CRUD operation**:
+
+1. **CREATE**: 
+   - Go to `/create.php`
+   - Fill form and submit
+   - Verify success message
+   - Check task appears in list
+
+2. **READ**:
+   - Click "View" on any task
+   - Verify all details display
+   - Check formatting is correct
+
+3. **UPDATE**:
+   - Click "Edit" on a task
+   - Modify fields
+   - Submit changes
+   - Verify updates appear
+
+4. **DELETE**:
+   - Click "Delete" on a task
+   - Confirm deletion
+   - Verify task removed
+   - Check success message
+
+5. **FILTER & SEARCH**:
+   - Filter by status (Pending, In Progress, Completed)
+   - Filter by priority (Low, Medium, High)
+   - Search for keywords
+   - Verify results are correct
+
+### Step 10.3: Load Testing (Optional but Recommended)
+
+**Install Apache Bench** (if not installed):
+
+```bash
+sudo apt install apache2-utils -y
+```
+
+**Basic load test**:
+
+```bash
+# Test with 100 requests, 10 concurrent
+ab -n 100 -c 10 https://yourdomain.com/
+
+# Test with 1000 requests, 50 concurrent
+ab -n 1000 -c 50 https://yourdomain.com/
+
+# Test specific page
+ab -n 500 -c 25 https://yourdomain.com/index.php
+```
+
+**Key metrics to check**:
+- **Requests per second**: Should be > 50 for simple pages
+- **Time per request**: Should be < 200ms average
+- **Failed requests**: Should be 0
+
+**Alternative: wrk (more realistic load)**:
+
+```bash
+# Install wrk
+sudo apt install wrk -y
+
+# Run test (12 threads, 400 connections, 30 seconds)
+wrk -t12 -c400 -d30s https://yourdomain.com/
+
+# Test with keep-alive
+wrk -t4 -c100 -d30s --latency https://yourdomain.com/
+```
+
+**What to look for**:
+- No errors
+- Consistent latency
+- Requests/sec should meet your requirements
+
+### Step 10.4: Security Testing
+
+**Test firewall**:
+
+```bash
+# Check UFW status
+sudo ufw status verbose
+
+# Verify only required ports are open
+sudo netstat -tulpn | grep LISTEN
+
+# Should show: 22 (SSH), 80 (HTTP), 443 (HTTPS), 3306 (MySQL localhost only)
+```
+
+**Test SSH hardening**:
+
+```bash
+# Verify root login disabled (should fail)
+ssh root@localhost
+# Expected: Permission denied
+
+# Verify password auth disabled
+# Try SSH without key - should fail
+```
+
+**Test fail2ban**:
+
+```bash
+# Check fail2ban is running
+sudo systemctl status fail2ban
+
+# Check jails
+sudo fail2ban-client status
+
+# Check SSH jail
+sudo fail2ban-client status sshd
+```
+
+**Scan for open ports** (from external machine or use online tool):
+
+```bash
+# Install nmap
+sudo apt install nmap -y
+
+# Scan from external machine
+nmap YOUR_SERVER_IP
+
+# Expected: Only 22, 80, 443 open
+```
+
+**Security headers test**:
+
+```bash
+# Check security headers
+curl -I https://yourdomain.com
+
+# Should see:
+# Strict-Transport-Security
+# X-Content-Type-Options
+# X-Frame-Options
+# X-XSS-Protection
+```
+
+**Online security scan**:
+- SSL Labs: https://www.ssllabs.com/ssltest/
+- Security Headers: https://securityheaders.com
+- Mozilla Observatory: https://observatory.mozilla.org
+
+**Target scores**:
+- SSL Labs: A or A+
+- Security Headers: A or B+
+- Mozilla Observatory: B+ or better
+
+### Step 10.5: Database Integrity Check
+
+```bash
+# Login to MySQL
+sudo mysql -u root -p
+```
+
+```sql
+-- Check database status
+SHOW DATABASES;
+USE lampdb;
+SHOW TABLES;
+
+-- Verify data integrity
+SELECT COUNT(*) FROM tasks;
+SELECT * FROM tasks WHERE id = 1;
+
+-- Check table structure
+DESCRIBE tasks;
+
+-- Check MySQL status
+SHOW STATUS LIKE 'Threads_connected';
+SHOW STATUS LIKE 'Uptime';
+
+-- Check InnoDB status
+SHOW ENGINE INNODB STATUS\G
+
+-- Exit
+EXIT;
+```
+
+### Step 10.6: Backup Verification
+
+```bash
+# Check backups exist
+sudo ls -lh /var/backups/mysql/
+
+# Check most recent backup
+sudo ls -lt /var/backups/mysql/ | head -5
+
+# Verify backup file is not empty
+sudo du -sh /var/backups/mysql/*.sql.gz
+
+# Check backup log
+sudo tail -20 /var/log/mysql-backup.log
+
+# Test restoration (to test database)
+sudo mysql -u root -p -e "CREATE DATABASE test_restore;"
+LATEST_BACKUP=$(sudo ls -t /var/backups/mysql/*.sql.gz | head -1)
+sudo gunzip < $LATEST_BACKUP | sudo mysql -u root -p test_restore
+sudo mysql -u root -p -e "USE test_restore; SELECT COUNT(*) FROM tasks;"
+sudo mysql -u root -p -e "DROP DATABASE test_restore;"
+```
+
+### Step 10.7: Log Review
+
+```bash
+# Apache error log
+sudo tail -50 /var/www/lampapp/logs/error.log
+# Should have no critical errors
+
+# Apache access log
+sudo tail -20 /var/www/lampapp/logs/access.log
+# Should show recent requests
+
+# PHP error log
+sudo tail -50 /var/log/php/error.log
+# Should have no errors (or only minor notices)
+
+# MySQL error log
+sudo tail -50 /var/log/mysql/error.log
+# Should have no errors
+
+# System log
+sudo tail -50 /var/log/syslog
+
+# Health check log
+sudo tail -20 /var/log/health-check.log
+# Should show all services OK
+
+# Backup log
+sudo tail -20 /var/log/mysql-backup.log
+# Should show successful backups
+```
+
+### Part C: Troubleshooting Common Issues
+
+### Issue: Apache won't start
+
+**Symptoms**: `sudo systemctl start apache2` fails
+
+**Diagnosis**:
+```bash
+# Check syntax
+sudo apache2ctl configtest
+
+# Check error log
+sudo journalctl -u apache2 -n 50
+
+# Check for port conflicts
+sudo netstat -tulpn | grep :80
+sudo netstat -tulpn | grep :443
+```
+
+**Solutions**:
+- Fix configuration errors shown by configtest
+- Kill process using port 80/443
+- Check file permissions
+- Check disk space: `df -h`
+
+### Issue: PHP not processing
+
+**Symptoms**: PHP files download instead of executing
+
+**Diagnosis**:
+```bash
+# Check PHP-FPM status
+sudo systemctl status php8.3-fpm
+
+# Check Apache has PHP handler
+sudo apache2ctl -M | grep proxy_fcgi
+
+# Check virtual host config
+sudo grep -A5 "FilesMatch.*php" /etc/apache2/sites-available/lampapp*.conf
+```
+
+**Solutions**:
+```bash
+# Restart PHP-FPM
+sudo systemctl restart php8.3-fpm
+
+# Enable proxy modules
+sudo a2enmod proxy_fcgi setenvif
+sudo a2enconf php8.3-fpm
+
+# Restart Apache
+sudo systemctl restart apache2
+```
+
+### Issue: Database connection errors
+
+**Symptoms**: "Database connection failed"
+
+**Diagnosis**:
+```bash
+# Check MySQL is running
+sudo systemctl status mysql
+
+# Test MySQL login
+mysql -u lampuser -p
+
+# Check .env file
+cat /var/www/lampapp/.env
+
+# Check .env permissions
+ls -la /var/www/lampapp/.env
+```
+
+**Solutions**:
+```bash
+# Restart MySQL
+sudo systemctl restart mysql
+
+# Verify credentials in .env
+sudo nano /var/www/lampapp/.env
+
+# Fix .env permissions
+sudo chown www-data:www-data /var/www/lampapp/.env
+sudo chmod 600 /var/www/lampapp/.env
+
+# Test connection manually
+mysql -u lampuser -p -e "USE lampdb; SELECT COUNT(*) FROM tasks;"
+```
+
+### Issue: Permission errors
+
+**Symptoms**: "Permission denied" errors in logs
+
+**Diagnosis**:
+```bash
+# Check file ownership
+ls -la /var/www/lampapp/
+
+# Check file permissions
+find /var/www/lampapp -type f -ls | head
+find /var/www/lampapp -type d -ls | head
+```
+
+**Solutions**:
+```bash
+# Fix ownership
+sudo chown -R www-data:www-data /var/www/lampapp
+
+# Fix directory permissions
+sudo find /var/www/lampapp -type d -exec chmod 755 {} \;
+
+# Fix file permissions
+sudo find /var/www/lampapp -type f -exec chmod 644 {} \;
+
+# Secure .env
+sudo chmod 600 /var/www/lampapp/.env
+```
+
+### Issue: SSL certificate problems
+
+**Symptoms**: Certificate expired, invalid, or not working
+
+**Diagnosis**:
+```bash
+# Check certificate status
+sudo certbot certificates
+
+# Check certificate expiry
+sudo openssl x509 -in /etc/letsencrypt/live/yourdomain.com/fullchain.pem -noout -dates
+
+# Test renewal
+sudo certbot renew --dry-run
+
+# Check Apache SSL config
+sudo apache2ctl -M | grep ssl
+```
+
+**Solutions**:
+```bash
+# Renew certificate manually
+sudo certbot renew
+
+# Force renewal
+sudo certbot renew --force-renewal
+
+# Check auto-renewal timer
+sudo systemctl status certbot.timer
+
+# Restart Apache
+sudo systemctl restart apache2
+```
+
+### Part D: Maintenance Recommendations
+
+### Daily Maintenance
+
+- ✅ Check health-check logs for service issues
+- ✅ Review application error logs
+- ✅ Monitor disk space: `df -h`
+- ✅ Check backup success
+
+### Weekly Maintenance
+
+- ✅ Review slow query log for optimization opportunities
+- ✅ Check backup restoration works
+- ✅ Review Apache access logs for unusual patterns
+- ✅ Update application if needed
+- ✅ Check security headers and SSL status
+
+### Monthly Maintenance
+
+- ✅ System updates: `sudo apt update && sudo apt upgrade`
+- ✅ Review and rotate logs manually if needed
+- ✅ Performance testing (load test)
+- ✅ Review fail2ban bans for attack patterns
+- ✅ Verify all monitoring is working
+- ✅ Test disaster recovery procedure
+
+### Quarterly Maintenance
+
+- ✅ Full security audit
+- ✅ Review and update firewall rules
+- ✅ Performance benchmark and compare
+- ✅ Review and update backup retention policy
+- ✅ Test full restoration from backup
+- ✅ Update documentation
+
+### Part E: Next Steps and Improvements
+
+### Immediate Next Steps
+
+1. **Set up monitoring dashboard**
+   - Install Netdata, Grafana, or similar
+   - Monitor Apache, MySQL, PHP-FPM, system resources
+   - Set up alerting for critical metrics
+
+2. **Implement application-level caching**
+   - Install Redis or Memcached
+   - Cache database queries
+   - Cache session data
+   - Expected: 2-5x performance improvement
+
+3. **Set up CDN** (for static assets)
+   - Cloudflare (free tier available)
+   - AWS CloudFront
+   - Expected: Faster global load times
+
+4. **Implement WAF** (Web Application Firewall)
+   - ModSecurity for Apache
+   - Cloudflare WAF
+   - Protection against common attacks
+
+### Future Enhancements
+
+1. **High Availability**
+   - Load balancer (HAProxy, Nginx)
+   - Multiple application servers
+   - Database replication (master-slave)
+   - 99.9%+ uptime
+
+2. **Advanced Monitoring**
+   - Prometheus + Grafana
+   - Application Performance Monitoring (APM)
+   - Real User Monitoring (RUM)
+   - Log aggregation (ELK stack)
+
+3. **Continuous Integration/Deployment**
+   - GitHub Actions for automated deployment
+   - Automated testing
+   - Blue-green deployments
+   - Rollback capabilities
+
+4. **Enhanced Security**
+   - Two-factor authentication
+   - Rate limiting
+   - DDoS protection
+   - Regular penetration testing
+
+5. **Scalability Improvements**
+   - Database sharding
+   - Read replicas
+   - Horizontal scaling
+   - Microservices architecture
+
+### Part F: Useful Commands Reference
+
+### Service Management
+
+```bash
+# Apache
+sudo systemctl start apache2
+sudo systemctl stop apache2
+sudo systemctl restart apache2
+sudo systemctl reload apache2
+sudo systemctl status apache2
+sudo apache2ctl configtest
+
+# MySQL
+sudo systemctl start mysql
+sudo systemctl stop mysql
+sudo systemctl restart mysql
+sudo systemctl status mysql
+
+# PHP-FPM
+sudo systemctl start php8.3-fpm
+sudo systemctl stop php8.3-fpm
+sudo systemctl restart php8.3-fpm
+sudo systemctl status php8.3-fpm
+```
+
+### Log Locations
+
+```bash
+# Apache
+/var/www/lampapp/logs/error.log
+/var/www/lampapp/logs/access.log
+/var/log/apache2/error.log
+
+# PHP
+/var/log/php/error.log
+/var/log/php-fpm/www-error.log
+/var/log/php-fpm/slow.log
+
+# MySQL
+/var/log/mysql/error.log
+/var/log/mysql/mysql-slow.log
+
+# System
+/var/log/syslog
+/var/log/auth.log
+
+# Application
+/var/log/health-check.log
+/var/log/mysql-backup.log
+```
+
+### Configuration File Paths
+
+```bash
+# Apache
+/etc/apache2/apache2.conf
+/etc/apache2/sites-available/lampapp.conf
+/etc/apache2/sites-available/lampapp-le-ssl.conf
+/etc/apache2/conf-available/security.conf
+
+# MySQL
+/etc/mysql/mysql.conf.d/mysqld.cnf
+/etc/mysql/mysql.conf.d/custom.cnf
+
+# PHP
+/etc/php/8.3/fpm/php.ini
+/etc/php/8.3/fpm/pool.d/www.conf
+
+# Application
+/var/www/lampapp/.env
+/var/www/lampapp/config/database.php
+```
+
+### Debugging Commands
+
+```bash
+# Check ports
+sudo netstat -tulpn | grep LISTEN
+sudo ss -tulpn
+
+# Check processes
+ps aux | grep apache2
+ps aux | grep mysql
+ps aux | grep php-fpm
+
+# Check disk space
+df -h
+du -sh /var/www/lampapp
+du -sh /var/backups/mysql
+
+# Check memory
+free -h
+top
+htop
+
+# Check connections
+sudo netstat -an | grep :80 | wc -l
+sudo netstat -an | grep :443 | wc -l
+
+# Check MySQL connections
+sudo mysql -u root -p -e "SHOW PROCESSLIST;"
+
+# Check error counts
+sudo grep -c "error" /var/www/lampapp/logs/error.log
+```
+
+---
+
+## 🎉 Congratulations! Your LAMP Stack is Complete!
+
+You have successfully deployed a **production-ready, secure, optimized LAMP stack** with:
+
+✅ **Security**: SSH hardening, firewall, fail2ban, SSL/TLS, security headers  
+✅ **Performance**: Optimized Apache, PHP-FPM, MySQL, OPcache, HTTP/2  
+✅ **Reliability**: Automated backups, health monitoring, log rotation  
+✅ **Functionality**: Fully working Task Manager application with CRUD operations  
+✅ **Best Practices**: Modern PHP 8.3, MySQL 8.0, proper file permissions, environment-based config  
+
+### Your Stack Summary
+
+- **OS**: Ubuntu 24.04 LTS
+- **Web Server**: Apache 2.4.x with Event MPM, HTTP/2, and security headers
+- **Database**: MySQL 8.0.x with optimized InnoDB settings
+- **PHP**: PHP 8.3.x with PHP-FPM and OPcache
+- **SSL**: Let's Encrypt with auto-renewal
+- **Application**: Task Manager with full CRUD functionality
+- **Backups**: Automated daily MySQL backups
+- **Monitoring**: Health checks every 15 minutes
+
+### Resources
+
+- **Project Repository**: https://github.com/jaymineh/P1_LAMP_Deployment
+- **Documentation**: Check `docs/` folder for additional guides
+- **Troubleshooting**: See `docs/troubleshooting.md`
+- **Architecture**: See `docs/architecture.md`
+
+### Get Help
+
+If you encounter issues:
+1. Check troubleshooting section above
+2. Review relevant log files
+3. Consult project documentation
+4. Search for error messages online
+5. Ask in relevant communities (Stack Overflow, Reddit r/webdev)
+
+---
+
+**Thank you for following this guide! You now have the skills to deploy and maintain professional LAMP stack applications.** 🚀
+
+**Remember**: Keep your system updated, monitor logs regularly, and test backups frequently!
+
+---
+
+*Last updated: December 2024*  
+*LAMP Stack Version: Apache 2.4.x, MySQL 8.0.x, PHP 8.3.x*  
+*Guide Version: 1.0*
