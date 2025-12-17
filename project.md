@@ -1835,3 +1835,985 @@ curl -I http://localhost | grep -E "X-Frame-Options|X-Content-Type-Options"
 **Virtual host is configured and working!** 🌍
 
 ---
+
+## Section 6: Setting up SSL/TLS with Let's Encrypt
+
+**Objective**: Secure your website with free SSL/TLS certificates from Let's Encrypt and enable HTTPS.
+
+### Why SSL/TLS?
+
+**SSL/TLS is essential** for any modern website:
+- **Security**: Encrypts data between server and users (prevents eavesdropping)
+- **Trust**: Browser shows padlock icon, users trust your site
+- **SEO**: Google ranks HTTPS sites higher
+- **Compliance**: Required for PCI-DSS, GDPR, and other standards
+- **Modern features**: HTTP/2, service workers, and many APIs require HTTPS
+
+**Let's Encrypt** provides free, automated SSL certificates trusted by all major browsers.
+
+### Prerequisites
+
+**⚠️ Important**: SSL certificates require a **domain name**. You cannot get a Let's Encrypt certificate for an IP address.
+
+**Options**:
+1. **With Domain**: Follow Steps 6.1-6.8 (recommended)
+2. **Without Domain**: Skip to Step 6.9 for self-signed certificate (testing only)
+
+### Step 6.1: Install Certbot
+
+**Certbot** is Let's Encrypt's official client for obtaining and managing SSL certificates.
+
+```bash
+# Install Certbot and Apache plugin
+sudo apt install certbot python3-certbot-apache -y
+
+# Verify installation
+certbot --version
+```
+
+**Expected output**: certbot 2.x.x
+
+**What is Certbot**: Automated tool that:
+- Requests SSL certificates from Let's Encrypt
+- Validates domain ownership
+- Configures Apache automatically
+- Sets up auto-renewal
+
+### Step 6.2: Prepare Your Domain
+
+**Before running Certbot**:
+
+1. **Point your domain to your server**:
+   - Create an A record: `yourdomain.com` → `YOUR_SERVER_IP`
+   - Create an A record: `www.yourdomain.com` → `YOUR_SERVER_IP`
+
+2. **Verify DNS propagation**:
+   ```bash
+   # Check if domain resolves to your server
+   nslookup yourdomain.com
+   nslookup www.yourdomain.com
+   
+   # Or use dig
+   dig yourdomain.com +short
+   dig www.yourdomain.com +short
+   ```
+
+**Expected**: Both commands should return your server's IP address.
+
+**Why this matters**: Let's Encrypt validates domain ownership by making HTTP requests to your domain. If DNS isn't pointing to your server, validation fails.
+
+### Step 6.3: Update Virtual Host with Domain Name
+
+```bash
+# Edit virtual host configuration
+sudo nano /etc/apache2/sites-available/lampapp.conf
+```
+
+**Update ServerName**:
+
+```apache
+<VirtualHost *:80>
+    # Replace lampapp.local with your actual domain
+    ServerName yourdomain.com
+    ServerAlias www.yourdomain.com
+    ServerAdmin webmaster@yourdomain.com
+    
+    # ... rest of configuration stays the same ...
+```
+
+**Replace** `yourdomain.com` with your actual domain.
+
+**Restart Apache**:
+
+```bash
+# Test configuration
+sudo apache2ctl configtest
+
+# Restart Apache
+sudo systemctl restart apache2
+```
+
+**Verify domain works**:
+
+```bash
+# Test from server
+curl -I http://yourdomain.com
+
+# Should return: HTTP/1.1 200 OK
+```
+
+**Test in browser**: `http://yourdomain.com` (should show your site)
+
+### Step 6.4: Obtain SSL Certificate
+
+**Run Certbot**:
+
+```bash
+# Obtain and install SSL certificate
+sudo certbot --apache -d yourdomain.com -d www.yourdomain.com
+```
+
+**Interactive prompts**:
+
+1. **Email address**: Enter your email (for renewal notifications)
+   - Example: `admin@yourdomain.com`
+   - Why: Let's Encrypt sends expiration warnings
+
+2. **Terms of Service**: `Y` (Yes, agree)
+
+3. **Share email with EFF**: `N` (No) or `Y` (optional)
+
+4. **Redirect HTTP to HTTPS?**: `2` (Redirect)
+   - Why: Forces all traffic to use HTTPS
+
+**What Certbot does automatically**:
+1. ✅ Validates domain ownership (HTTP challenge)
+2. ✅ Requests certificate from Let's Encrypt
+3. ✅ Downloads certificate files
+4. ✅ Creates new VirtualHost for port 443 (HTTPS)
+5. ✅ Configures SSL settings
+6. ✅ Sets up HTTP → HTTPS redirect
+7. ✅ Reloads Apache
+
+**Certificate locations**:
+- Certificate: `/etc/letsencrypt/live/yourdomain.com/fullchain.pem`
+- Private Key: `/etc/letsencrypt/live/yourdomain.com/privkey.pem`
+- Chain: `/etc/letsencrypt/live/yourdomain.com/chain.pem`
+
+### Step 6.5: Verify SSL Configuration
+
+**Check certificate status**:
+
+```bash
+# List all certificates
+sudo certbot certificates
+
+# View detailed certificate info
+sudo openssl x509 -in /etc/letsencrypt/live/yourdomain.com/fullchain.pem -text -noout | grep -E "Subject:|Issuer:|Not"
+```
+
+**Expected output**:
+- Subject: CN = yourdomain.com
+- Issuer: Let's Encrypt
+- Not Before: (issue date)
+- Not After: (expiry date, ~90 days from issue)
+
+**Check Apache SSL configuration**:
+
+```bash
+# View updated virtual host
+sudo cat /etc/apache2/sites-available/lampapp-le-ssl.conf
+
+# Or check original file (Certbot updates it)
+sudo cat /etc/apache2/sites-available/lampapp.conf
+```
+
+**Test HTTPS locally**:
+
+```bash
+# Test SSL connection
+curl -I https://yourdomain.com
+
+# Should show: HTTP/2 200 OK (or HTTP/1.1 200 OK)
+```
+
+**Test redirect (HTTP → HTTPS)**:
+
+```bash
+curl -I http://yourdomain.com
+
+# Should show: HTTP/1.1 301 Moved Permanently
+# Location: https://yourdomain.com/
+```
+
+### Step 6.6: Test SSL in Browser
+
+**Open browser and navigate to**:
+```
+https://yourdomain.com
+```
+
+**You should see**:
+- 🔒 Padlock icon in address bar
+- "Connection is secure"
+- Valid SSL certificate
+
+**Check certificate details**:
+- Click the padlock → Certificate
+- Should show: Issued by Let's Encrypt
+- Valid for: yourdomain.com, www.yourdomain.com
+
+**Test auto-redirect**:
+```
+http://yourdomain.com
+```
+Should automatically redirect to `https://yourdomain.com`
+
+### Step 6.7: Configure Auto-Renewal
+
+**Let's Encrypt certificates expire after 90 days**. Certbot sets up automatic renewal.
+
+**Check renewal timer**:
+
+```bash
+# Check if certbot timer is active
+sudo systemctl status certbot.timer
+
+# List systemd timers
+sudo systemctl list-timers | grep certbot
+```
+
+**Expected**: Timer should be active and scheduled to run twice daily.
+
+**Test renewal (dry run)**:
+
+```bash
+# Simulate renewal without actually renewing
+sudo certbot renew --dry-run
+```
+
+**Expected output**:
+```
+Congratulations, all simulated renewals succeeded:
+  /etc/letsencrypt/live/yourdomain.com/fullchain.pem (success)
+```
+
+**If dry run succeeds**, auto-renewal is configured correctly.
+
+**Manual renewal** (if needed):
+
+```bash
+# Renew all certificates
+sudo certbot renew
+
+# Renew specific certificate
+sudo certbot renew --cert-name yourdomain.com
+
+# Renew with verbose output
+sudo certbot renew --verbose
+```
+
+**Renewal logs**: `/var/log/letsencrypt/letsencrypt.log`
+
+### Step 6.8: Enhance SSL Security
+
+**Check current SSL configuration**:
+
+```bash
+# View SSL configuration
+sudo nano /etc/letsencrypt/options-ssl-apache.conf
+```
+
+Certbot creates strong SSL settings by default. **Verify these are present**:
+
+```apache
+# Modern SSL configuration
+SSLEngine on
+SSLProtocol             all -SSLv2 -SSLv3 -TLSv1 -TLSv1.1
+SSLCipherSuite          ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256...
+SSLHonorCipherOrder     off
+SSLSessionTickets       off
+
+# HSTS (HTTP Strict Transport Security)
+Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+```
+
+**Add additional security headers** to your virtual host:
+
+```bash
+sudo nano /etc/apache2/sites-available/lampapp-le-ssl.conf
+```
+
+**Add inside `<VirtualHost *:443>`**:
+
+```apache
+    # Additional security headers
+    <IfModule mod_headers.c>
+        # HSTS (already added by Certbot, but verify)
+        Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        
+        # Prevent MIME sniffing
+        Header always set X-Content-Type-Options "nosniff"
+        
+        # Clickjacking protection
+        Header always set X-Frame-Options "SAMEORIGIN"
+        
+        # XSS protection
+        Header always set X-XSS-Protection "1; mode=block"
+        
+        # Referrer policy
+        Header always set Referrer-Policy "strict-origin-when-cross-origin"
+        
+        # Content Security Policy (adjust as needed)
+        Header always set Content-Security-Policy "default-src 'self' https:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';"
+    </IfModule>
+```
+
+**Restart Apache**:
+
+```bash
+sudo apache2ctl configtest
+sudo systemctl restart apache2
+```
+
+**Test SSL strength**:
+
+```bash
+# Check SSL/TLS protocols
+openssl s_client -connect yourdomain.com:443 -tls1_2 < /dev/null
+
+# Check headers
+curl -I https://yourdomain.com
+```
+
+### Step 6.9: Alternative - Self-Signed Certificate (Testing Only)
+
+**⚠️ Use only if you don't have a domain name**. Self-signed certificates trigger browser warnings.
+
+**Create self-signed certificate**:
+
+```bash
+# Create SSL directory
+sudo mkdir -p /etc/ssl/private
+sudo chmod 700 /etc/ssl/private
+
+# Generate self-signed certificate (valid for 365 days)
+sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+  -keyout /etc/ssl/private/lampapp-selfsigned.key \
+  -out /etc/ssl/certs/lampapp-selfsigned.crt
+
+# Interactive prompts (example):
+# Country: US
+# State: California
+# Locality: San Francisco
+# Organization: My Company
+# Organizational Unit: IT
+# Common Name: YOUR_SERVER_IP or localhost
+# Email: admin@example.com
+```
+
+**Create SSL virtual host**:
+
+```bash
+sudo nano /etc/apache2/sites-available/lampapp-ssl.conf
+```
+
+**Add**:
+
+```apache
+<VirtualHost *:443>
+    ServerName YOUR_SERVER_IP
+    ServerAdmin webmaster@localhost
+    DocumentRoot /var/www/lampapp/public
+    
+    SSLEngine on
+    SSLCertificateFile /etc/ssl/certs/lampapp-selfsigned.crt
+    SSLCertificateKeyFile /etc/ssl/private/lampapp-selfsigned.key
+    
+    <Directory /var/www/lampapp/public>
+        Options -Indexes +FollowSymLinks
+        AllowOverride All
+        Require all granted
+        
+        <FilesMatch \.php$>
+            SetHandler "proxy:unix:/run/php/php8.3-fpm.sock|fcgi://localhost"
+        </FilesMatch>
+    </Directory>
+    
+    ErrorLog /var/www/lampapp/logs/ssl-error.log
+    CustomLog /var/www/lampapp/logs/ssl-access.log combined
+</VirtualHost>
+```
+
+**Enable SSL site**:
+
+```bash
+# Enable SSL module
+sudo a2enmod ssl
+
+# Enable SSL site
+sudo a2ensite lampapp-ssl.conf
+
+# Test configuration
+sudo apache2ctl configtest
+
+# Restart Apache
+sudo systemctl restart apache2
+```
+
+**Test**: `https://YOUR_SERVER_IP` (accept security warning in browser)
+
+**Note**: Self-signed certificates are for testing only. Use Let's Encrypt for production.
+
+### Step 6.10: Test SSL Configuration Online
+
+**SSL Labs Test** (most comprehensive):
+
+1. Visit: https://www.ssllabs.com/ssltest/
+2. Enter: `yourdomain.com`
+3. Wait for scan (2-3 minutes)
+4. Target Grade: **A** or **A+**
+
+**What it checks**:
+- Certificate validity
+- Protocol support (TLS 1.2, TLS 1.3)
+- Cipher strength
+- Known vulnerabilities
+- Configuration best practices
+
+**Security Headers Check**:
+
+Visit: https://securityheaders.com
+Enter: `https://yourdomain.com`
+Target Grade: **A** or better
+
+### ✅ Section 6 Verification
+
+```bash
+# Check Certbot version
+certbot --version
+
+# List all certificates
+sudo certbot certificates
+
+# Check SSL certificate expiry
+sudo openssl x509 -in /etc/letsencrypt/live/yourdomain.com/fullchain.pem -noout -dates
+
+# Test auto-renewal
+sudo certbot renew --dry-run
+
+# Check Apache SSL configuration
+sudo apache2ctl -M | grep ssl
+
+# Verify HTTPS works
+curl -I https://yourdomain.com
+
+# Verify HTTP redirects to HTTPS
+curl -I http://yourdomain.com
+
+# Check security headers
+curl -I https://yourdomain.com | grep -E "Strict-Transport-Security|X-Content-Type-Options|X-Frame-Options"
+
+# View renewal timer
+sudo systemctl status certbot.timer
+
+# Check SSL Labs grade (manually)
+# Visit: https://www.ssllabs.com/ssltest/analyze.html?d=yourdomain.com
+```
+
+**SSL/TLS Configuration Checklist**:
+- ✅ Certbot installed
+- ✅ Domain DNS configured and propagating
+- ✅ SSL certificate obtained from Let's Encrypt
+- ✅ Certificate valid and trusted
+- ✅ HTTPS working (https://yourdomain.com)
+- ✅ HTTP → HTTPS redirect configured
+- ✅ Auto-renewal configured and tested
+- ✅ SSL/TLS protocols configured (TLS 1.2+)
+- ✅ Strong cipher suites enabled
+- ✅ HSTS header configured
+- ✅ Security headers present
+- ✅ SSL Labs grade A or A+
+- ✅ Certificate expires in ~90 days (renewal will happen automatically)
+
+**Alternative (no domain)**:
+- ✅ Self-signed certificate created
+- ✅ SSL virtual host configured
+- ✅ HTTPS working (with browser warning)
+
+**Your website is now secured with SSL/TLS!** 🔒
+
+---
+
+## Section 7: Deploying the Sample Application
+
+**Objective**: Deploy the Task Manager application from the repository, configure database connectivity, and test all CRUD operations.
+
+### What is the Sample Application?
+
+This repository includes a **Task Manager** application that demonstrates LAMP stack functionality:
+
+**Features**:
+- ✅ Create, Read, Update, Delete tasks (CRUD operations)
+- ✅ Task filtering by status and priority
+- ✅ Search functionality
+- ✅ Responsive design with Bootstrap 5
+- ✅ Secure database connectivity with PDO
+- ✅ Environment-based configuration (.env)
+- ✅ Input validation and sanitization
+- ✅ Session-based flash messages
+
+**Technology Stack**:
+- **Frontend**: HTML5, CSS3, Bootstrap 5, Bootstrap Icons
+- **Backend**: PHP 8.3 with PDO
+- **Database**: MySQL 8.0
+- **Security**: Prepared statements, XSS protection, CSRF protection
+
+### Step 7.1: Review Application Structure
+
+```bash
+# Navigate to the app directory
+cd /home/runner/work/P1_LAMP_Deployment/P1_LAMP_Deployment/app
+
+# View structure
+tree -L 2
+# Or: ls -la
+```
+
+**Application structure**:
+```
+app/
+├── config/
+│   └── database.php      # Database connection and configuration
+├── includes/
+│   └── functions.php     # Helper functions and HTML rendering
+├── public/               # Web-accessible files (DocumentRoot)
+│   ├── index.php        # Task list (Read)
+│   ├── create.php       # Create new task
+│   ├── read.php         # View single task details
+│   ├── update.php       # Edit task
+│   └── delete.php       # Delete task
+├── .env.example         # Environment variables template
+└── schema.sql           # Database schema and sample data
+```
+
+**Why this structure**:
+- **config/**: Database and app configuration (outside web root for security)
+- **includes/**: Shared functions and templates (outside web root)
+- **public/**: Only directory accessible via web browser
+- **.env**: Stores sensitive credentials (never committed to git)
+- **schema.sql**: Database structure and sample data
+
+### Step 7.2: Copy Application Files
+
+```bash
+# Copy app files to web root
+sudo cp -r /home/runner/work/P1_LAMP_Deployment/P1_LAMP_Deployment/app/* /var/www/lampapp/
+
+# Verify files copied
+ls -la /var/www/lampapp/
+```
+
+**Expected**: You should see `config/`, `includes/`, `public/`, `.env.example`, and `schema.sql`
+
+**Why copy to /var/www/lampapp**: Matches the virtual host DocumentRoot we configured in Section 5.
+
+### Step 7.3: Set Up Environment Configuration
+
+**Create .env file from template**:
+
+```bash
+# Copy example to actual .env
+sudo cp /var/www/lampapp/.env.example /var/www/lampapp/.env
+
+# Edit with your database credentials
+sudo nano /var/www/lampapp/.env
+```
+
+**Update these values**:
+
+```env
+# Database Configuration
+DB_HOST=localhost
+DB_PORT=3306
+DB_NAME=lampdb                          # Database created in Section 3
+DB_USER=lampuser                        # User created in Section 3
+DB_PASSWORD=YourStrongPassword123!      # Password from Section 3
+
+# Application Configuration
+APP_NAME="Task Manager - LAMP Stack Demo"
+APP_ENV=production
+APP_DEBUG=false                         # Set to true only for debugging
+APP_URL=https://yourdomain.com         # Your domain or server IP
+```
+
+**⚠️ Important**: 
+- Replace `YourStrongPassword123!` with the actual password you set in Section 3
+- Use `DB_NAME=lampdb` and `DB_USER=lampuser` (from Section 3)
+- Set `APP_DEBUG=false` for production (don't expose errors to users)
+
+**Why .env file**: 
+- Separates configuration from code
+- Keeps credentials secure
+- Easy to update without changing code
+- Different settings for dev/staging/production
+
+### Step 7.4: Set Proper Permissions
+
+```bash
+# Set ownership to Apache user
+sudo chown -R www-data:www-data /var/www/lampapp
+
+# Set directory permissions (755)
+sudo find /var/www/lampapp -type d -exec chmod 755 {} \;
+
+# Set file permissions (644)
+sudo find /var/www/lampapp -type f -exec chmod 644 {} \;
+
+# Secure .env file (read-only for owner)
+sudo chmod 600 /var/www/lampapp/.env
+
+# Verify .env permissions
+ls -la /var/www/lampapp/.env
+```
+
+**Expected for .env**: `-rw------- 1 www-data www-data`
+
+**Why these permissions**:
+- **755 for directories**: Apache can read and list directory contents
+- **644 for files**: Apache can read files, only owner can write
+- **600 for .env**: Only the owner (www-data) can read credentials
+
+**Security**: The .env file contains sensitive database credentials. Never make it world-readable!
+
+### Step 7.5: Import Database Schema
+
+**Import the schema and sample data**:
+
+```bash
+# Import schema into lampdb database
+sudo mysql -u lampuser -p lampdb < /var/www/lampapp/schema.sql
+
+# Enter lampuser password when prompted
+```
+
+**Verify tables were created**:
+
+```bash
+# Login to MySQL
+mysql -u lampuser -p lampdb
+
+# Enter password
+```
+
+**Inside MySQL**:
+
+```sql
+-- Show tables
+SHOW TABLES;
+
+-- Should show: tasks
+
+-- Describe tasks table structure
+DESCRIBE tasks;
+
+-- View sample data
+SELECT id, title, status, priority FROM tasks;
+
+-- Count tasks
+SELECT COUNT(*) FROM tasks;
+
+-- Exit
+EXIT;
+```
+
+**Expected output**:
+- Table `tasks` exists
+- 8 sample tasks inserted
+- Columns: id, title, description, status, priority, due_date, created_at, updated_at
+
+**What the schema includes**:
+- `tasks` table with proper indexes
+- ENUM fields for status (pending, in_progress, completed)
+- ENUM fields for priority (low, medium, high)
+- 8 sample tasks demonstrating different statuses and priorities
+- UTF8MB4 charset for full Unicode support
+
+### Step 7.6: Test Database Connection from PHP
+
+**Create a connection test file**:
+
+```bash
+sudo nano /var/www/lampapp/public/test-db.php
+```
+
+**Add**:
+
+```php
+<?php
+require_once __DIR__ . '/../config/database.php';
+
+echo "<h1>Database Connection Test</h1>";
+
+// Test connection
+if (testConnection()) {
+    echo "<p style='color: green;'>✅ <strong>Database connection successful!</strong></p>";
+    
+    // Show database info
+    try {
+        $pdo = getConnection();
+        
+        echo "<h2>Database Information:</h2>";
+        echo "<ul>";
+        echo "<li><strong>Host:</strong> " . DB_HOST . "</li>";
+        echo "<li><strong>Database:</strong> " . DB_NAME . "</li>";
+        echo "<li><strong>User:</strong> " . DB_USER . "</li>";
+        echo "<li><strong>Charset:</strong> " . DB_CHARSET . "</li>";
+        echo "</ul>";
+        
+        // Count tasks
+        $stmt = $pdo->query("SELECT COUNT(*) as count FROM tasks");
+        $result = $stmt->fetch();
+        
+        echo "<h2>Database Content:</h2>";
+        echo "<p><strong>Total Tasks:</strong> " . $result['count'] . "</p>";
+        
+        // Show sample tasks
+        $stmt = $pdo->query("SELECT id, title, status FROM tasks LIMIT 3");
+        $tasks = $stmt->fetchAll();
+        
+        echo "<h3>Sample Tasks:</h3>";
+        echo "<ul>";
+        foreach ($tasks as $task) {
+            echo "<li>ID: " . $task['id'] . " - " . htmlspecialchars($task['title']) . " (" . $task['status'] . ")</li>";
+        }
+        echo "</ul>";
+        
+    } catch (Exception $e) {
+        echo "<p style='color: red;'>Error querying database: " . htmlspecialchars($e->getMessage()) . "</p>";
+    }
+    
+} else {
+    echo "<p style='color: red;'>❌ <strong>Database connection failed!</strong></p>";
+    echo "<p>Check your .env file configuration:</p>";
+    echo "<ul>";
+    echo "<li>DB_HOST: " . DB_HOST . "</li>";
+    echo "<li>DB_NAME: " . DB_NAME . "</li>";
+    echo "<li>DB_USER: " . DB_USER . "</li>";
+    echo "</ul>";
+}
+?>
+```
+
+**Test in browser**:
+
+```
+https://yourdomain.com/test-db.php
+```
+
+**Expected**:
+- ✅ Database connection successful!
+- Shows database info (host, name, user)
+- Shows task count (should be 8)
+- Lists 3 sample tasks
+
+**If connection fails**, check:
+```bash
+# Verify .env file exists and has correct values
+cat /var/www/lampapp/.env
+
+# Verify .env permissions
+ls -la /var/www/lampapp/.env
+
+# Check MySQL user can connect
+mysql -u lampuser -p -e "USE lampdb; SELECT COUNT(*) FROM tasks;"
+
+# Check Apache error log
+sudo tail -20 /var/www/lampapp/logs/error.log
+```
+
+**Clean up test file**:
+
+```bash
+sudo rm /var/www/lampapp/public/test-db.php
+```
+
+### Step 7.7: Access the Task Manager Application
+
+**Open browser and navigate to**:
+
+```
+https://yourdomain.com
+```
+
+**You should see**:
+- 📋 Task Manager interface
+- List of 8 sample tasks
+- Task statistics (Pending, In Progress, Completed counts)
+- Filter options (Status, Priority, Search)
+- Colorful task cards with badges
+
+**Application pages**:
+- **Home** (`/index.php`): Task list with filtering
+- **Create** (`/create.php`): Create new task form
+- **View** (`/read.php?id=1`): View task details
+- **Edit** (`/update.php?id=1`): Edit task form
+- **Delete** (`/delete.php?id=1`): Delete task (with confirmation)
+
+### Step 7.8: Test CRUD Operations
+
+**Test CREATE**:
+
+1. Click "New Task" button
+2. Fill in form:
+   - Title: "Test Task Creation"
+   - Description: "Testing CRUD operations"
+   - Status: "Pending"
+   - Priority: "High"
+   - Due Date: Tomorrow's date
+3. Click "Create Task"
+4. Should redirect to task list with success message
+5. New task should appear in the list
+
+**Test READ**:
+
+1. Click "View" on any task
+2. Should show full task details
+3. Verify all fields display correctly
+
+**Test UPDATE**:
+
+1. Click "Edit" on a task
+2. Modify title or status
+3. Click "Update Task"
+4. Should redirect with success message
+5. Changes should be visible
+
+**Test DELETE**:
+
+1. Click "Delete" on a task
+2. Confirm deletion in popup
+3. Task should be removed from list
+4. Should show success message
+
+**Test FILTERING**:
+
+1. Use status dropdown to filter by "Completed"
+2. Only completed tasks should show
+3. Use priority dropdown to filter by "High"
+4. Only high priority tasks should show
+5. Use search box to search for keywords
+6. Matching tasks should appear
+
+### Step 7.9: Verify Application Security
+
+**Check security features**:
+
+```bash
+# Test .env is not accessible via web
+curl https://yourdomain.com/.env
+# Should return: 403 Forbidden
+
+# Test config directory is not accessible
+curl https://yourdomain.com/config/database.php
+# Should return: 404 Not Found (not in public/ directory)
+
+# Test includes directory is not accessible
+curl https://yourdomain.com/includes/functions.php
+# Should return: 404 Not Found (not in public/ directory)
+```
+
+**Why this works**: Virtual host DocumentRoot is `/var/www/lampapp/public/`, so only files in `public/` are web-accessible.
+
+**Application security features**:
+- ✅ Prepared statements (SQL injection protection)
+- ✅ Input validation and sanitization
+- ✅ XSS protection via `htmlspecialchars()`
+- ✅ Environment-based configuration
+- ✅ Credentials outside web root
+- ✅ Error handling (doesn't expose sensitive info)
+- ✅ HTTPS encryption (from Section 6)
+
+### Step 7.10: Configure Application Logging
+
+**Create log directory**:
+
+```bash
+# Create logs directory for application
+sudo mkdir -p /var/www/lampapp/logs/app
+
+# Set permissions
+sudo chown www-data:www-data /var/www/lampapp/logs/app
+sudo chmod 755 /var/www/lampapp/logs/app
+```
+
+**PHP errors are already logged** to `/var/log/php/error.log` (configured in Section 4).
+
+**Application errors** can be logged by the app itself (already configured in database.php).
+
+### ✅ Section 7 Verification
+
+```bash
+# Verify application files exist
+ls -la /var/www/lampapp/
+
+# Check .env file exists and is secure
+ls -la /var/www/lampapp/.env
+
+# Verify database table exists
+mysql -u lampuser -p -e "USE lampdb; SHOW TABLES; SELECT COUNT(*) FROM tasks;"
+
+# Test database connection
+curl -s https://yourdomain.com/ | grep -i "task"
+
+# Check file permissions
+ls -la /var/www/lampapp/public/
+
+# Verify ownership
+stat /var/www/lampapp/ | grep "Uid:"
+
+# Test HTTPS is working
+curl -I https://yourdomain.com | grep "HTTP"
+
+# Check for security headers
+curl -I https://yourdomain.com | grep -E "X-Frame-Options|Strict-Transport-Security"
+```
+
+**Application Deployment Checklist**:
+- ✅ Application files copied to /var/www/lampapp
+- ✅ .env file created with correct database credentials
+- ✅ Proper file permissions set (755 dirs, 644 files, 600 .env)
+- ✅ Ownership set to www-data:www-data
+- ✅ Database schema imported successfully
+- ✅ Sample data loaded (8 tasks)
+- ✅ Database connection tested and working
+- ✅ Application accessible via HTTPS
+- ✅ CREATE operation working
+- ✅ READ operation working
+- ✅ UPDATE operation working
+- ✅ DELETE operation working
+- ✅ Filtering and search working
+- ✅ .env file not web-accessible
+- ✅ config/ and includes/ not web-accessible
+- ✅ Security headers present
+- ✅ No PHP errors displayed (production mode)
+
+**Troubleshooting Common Issues**:
+
+**Issue**: Blank page or 500 error
+```bash
+# Check Apache error log
+sudo tail -50 /var/www/lampapp/logs/error.log
+
+# Check PHP error log
+sudo tail -50 /var/log/php/error.log
+
+# Enable debug mode temporarily
+sudo nano /var/www/lampapp/.env
+# Set: APP_DEBUG=true
+```
+
+**Issue**: Database connection error
+```bash
+# Verify .env values
+cat /var/www/lampapp/.env
+
+# Test MySQL login
+mysql -u lampuser -p
+
+# Check MySQL is running
+sudo systemctl status mysql
+```
+
+**Issue**: Permission denied errors
+```bash
+# Reset permissions
+sudo chown -R www-data:www-data /var/www/lampapp
+sudo find /var/www/lampapp -type d -exec chmod 755 {} \;
+sudo find /var/www/lampapp -type f -exec chmod 644 {} \;
+sudo chmod 600 /var/www/lampapp/.env
+```
+
+**The Task Manager application is now deployed and fully functional!** 📋
+
+---
