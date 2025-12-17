@@ -11,16 +11,16 @@ A comprehensive, production-ready guide for deploying a modern LAMP (Linux, Apac
 
 ## 📋 Table of Contents
 
-- [Overview](#overview)
-- [Features](#features)
-- [Prerequisites](#prerequisites)
-- [Quick Start](#quick-start)
-- [Project Structure](#project-structure)
-- [Documentation](#documentation)
-- [Sample Application](#sample-application)
-- [What You'll Learn](#what-youll-learn)
-- [Contributing](#contributing)
-- [License](#license)
+- [Overview](#-overview)
+- [Features](#-features)
+- [Prerequisites](#-prerequisites)
+- [Quick Start](#-quick-start)
+- [Project Structure](#-project-structure)
+- [Documentation](#-documentation)
+- [Sample Application](#-sample-application)
+- [What You'll Learn](#-what-youll-learn)
+- [Contributing](#-contributing)
+- [License](#-license)
 
 ## 🎯 Overview
 
