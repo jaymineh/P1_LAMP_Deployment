@@ -6,9 +6,11 @@
 # Usage: ./backup.sh [database_name] or run via cron for all databases
 ###############################################################################
 
-# Load environment variables if .env file exists
+# Load environment variables if .env file exists (safely)
 if [ -f "/var/www/html/.env" ]; then
-    export $(cat /var/www/html/.env | grep -v '^#' | xargs)
+    set -a
+    source <(grep -v '^#' /var/www/html/.env | sed 's/\r$//')
+    set +a
 fi
 
 # Configuration

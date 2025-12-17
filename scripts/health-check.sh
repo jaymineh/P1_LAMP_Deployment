@@ -6,9 +6,11 @@
 # Usage: ./health-check.sh or run via cron every 5-15 minutes
 ###############################################################################
 
-# Load environment variables if .env file exists
+# Load environment variables if .env file exists (safely)
 if [ -f "/var/www/html/.env" ]; then
-    export $(cat /var/www/html/.env | grep -v '^#' | xargs)
+    set -a
+    source <(grep -v '^#' /var/www/html/.env | sed 's/\r$//')
+    set +a
 fi
 
 # Configuration
@@ -49,19 +51,22 @@ check_service() {
         echo -e "${RED}✗${NC} $service is NOT running"
         send_alert "$service is not running on $(hostname)"
         
-        # Attempt to restart the service
-        log_message "Attempting to restart $service"
-        systemctl restart "$service"
+        # Note: Automatic restart can be enabled by uncommenting below
+        # Only enable if you want automatic service recovery without manual intervention
+        # Consider the security implications of automatic restarts
         
-        sleep 5
-        
-        if systemctl is-active --quiet "$service"; then
-            log_message "$service restarted successfully"
-            send_alert "$service was down but has been restarted successfully"
-        else
-            log_message "ERROR: Failed to restart $service"
-            send_alert "CRITICAL: Failed to restart $service on $(hostname)"
-        fi
+        # Attempt to restart the service (DISABLED by default for safety)
+        # Uncomment the following lines to enable automatic restart:
+        # log_message "Attempting to restart $service"
+        # systemctl restart "$service"
+        # sleep 5
+        # if systemctl is-active --quiet "$service"; then
+        #     log_message "$service restarted successfully"
+        #     send_alert "$service was down but has been restarted successfully"
+        # else
+        #     log_message "ERROR: Failed to restart $service"
+        #     send_alert "CRITICAL: Failed to restart $service on $(hostname)"
+        # fi
         
         return 1
     fi
