@@ -746,14 +746,14 @@ EXIT;
 
 ### Step 3.6: Configure MySQL for Basic Optimization
 
-**Reference configuration**: The repository includes an optimized MySQL configuration at `configs/my.cnf`.
+**Reference configuration**: The repository includes an optimized MySQL configuration at `configs/mysql/my.cnf`.
 
 ```bash
 # Backup original configuration
 sudo cp /etc/mysql/mysql.conf.d/mysqld.cnf /etc/mysql/mysql.conf.d/mysqld.cnf.backup
 
 # View the example configuration
-cat /home/runner/work/P1_LAMP_Deployment/P1_LAMP_Deployment/configs/my.cnf
+cat /home/runner/work/P1_LAMP_Deployment/P1_LAMP_Deployment/configs/mysql/my.cnf
 ```
 
 **Create custom configuration**:
@@ -1006,11 +1006,11 @@ sudo netstat -pl | grep php-fpm
 
 ### Step 4.4: Configure PHP Settings
 
-**Reference configuration**: The repository includes optimized PHP settings at `configs/php.ini`.
+**Reference configuration**: The repository includes optimized PHP settings at `configs/php/php.ini`.
 
 ```bash
 # View example PHP configuration
-cat /home/runner/work/P1_LAMP_Deployment/P1_LAMP_Deployment/configs/php.ini
+cat /home/runner/work/P1_LAMP_Deployment/P1_LAMP_Deployment/configs/php/php.ini
 
 # Edit PHP-FPM configuration
 sudo nano /etc/php/8.3/fpm/php.ini
@@ -1510,11 +1510,11 @@ sudo chmod 644 /var/www/lampapp/public/index.html
 
 ### Step 5.4: Create Apache Virtual Host Configuration
 
-**Reference configuration**: The repository includes a template at `configs/apache-vhost.conf`.
+**Reference configuration**: The repository includes a template at `configs/apache/lampapp.conf`.
 
 ```bash
 # View the example configuration
-cat /home/runner/work/P1_LAMP_Deployment/P1_LAMP_Deployment/configs/apache-vhost.conf
+cat /home/runner/work/P1_LAMP_Deployment/P1_LAMP_Deployment/configs/apache/lampapp.conf
 
 # Create virtual host configuration
 sudo nano /etc/apache2/sites-available/lampapp.conf
@@ -2374,7 +2374,8 @@ app/
 │   ├── update.php       # Edit task
 │   └── delete.php       # Delete task
 ├── .env.example         # Environment variables template
-└── schema.sql           # Database schema and sample data
+└── sql/
+    └── schema.sql       # Database schema and sample data
 ```
 
 **Why this structure**:
@@ -2382,7 +2383,7 @@ app/
 - **includes/**: Shared functions and templates (outside web root)
 - **public/**: Only directory accessible via web browser
 - **.env**: Stores sensitive credentials (never committed to git)
-- **schema.sql**: Database structure and sample data
+- **sql/schema.sql**: Database structure and sample data
 
 ### Step 7.2: Copy Application Files
 
@@ -2394,7 +2395,7 @@ sudo cp -r /home/runner/work/P1_LAMP_Deployment/P1_LAMP_Deployment/app/* /var/ww
 ls -la /var/www/lampapp/
 ```
 
-**Expected**: You should see `config/`, `includes/`, `public/`, `.env.example`, and `schema.sql`
+**Expected**: You should see `config/`, `includes/`, `public/`, `sql/`, `.env.example`
 
 **Why copy to /var/www/lampapp**: Matches the virtual host DocumentRoot we configured in Section 5.
 
@@ -2472,7 +2473,7 @@ ls -la /var/www/lampapp/.env
 
 ```bash
 # Import schema into lampdb database
-sudo mysql -u lampuser -p lampdb < /var/www/lampapp/schema.sql
+sudo mysql -u lampuser -p lampdb < /var/www/lampapp/sql/schema.sql
 
 # Enter lampuser password when prompted
 ```
