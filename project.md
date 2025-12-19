@@ -184,16 +184,16 @@ Status: active
 
 To                         Action      From
 --                         ------      ----
-22/tcp                     ALLOW       Anywhere
-80/tcp                     ALLOW       Anywhere
-443/tcp                    ALLOW       Anywhere
+22/tcp                     ALLOW IN    Anywhere
+80/tcp                     ALLOW IN    Anywhere
+443/tcp                    ALLOW IN    Anywhere
 ```
 
 **Why UFW + AWS Security Groups**: Defense in depth - multiple security layers protect better than one.
 
 **⚠️ Critical**: Always allow SSH port BEFORE enabling UFW, or you'll lock yourself out!
 
-### Step 1.6: Install and Configure fail2ban
+### Step 1.6: Install and Configure fail2ban (OPTIONAL)
 
 **Intrusion Prevention**: Automatically ban IPs after failed login attempts.
 
