@@ -378,7 +378,7 @@ http://YOUR_SERVER_IP
 
 **You should see**: Apache2 Ubuntu Default Page
 
-![Apache Default Page](https://via.placeholder.com/800x400.png?text=Apache2+Ubuntu+Default+Page)
+![Apache Default Page](screenshots\apache2.png)
 
 **Why test both ways**: Local test verifies Apache works; browser test verifies firewall rules allow HTTP traffic.
 
