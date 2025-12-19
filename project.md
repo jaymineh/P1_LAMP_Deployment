@@ -367,6 +367,8 @@ curl http://localhost
 curl http://127.0.0.1
 ```
 
+![apache_status](apache2.png)
+
 **Expected**: HTML output with "Apache2 Ubuntu Default Page"
 
 ### Step 2.4: Test Apache from Browser
