@@ -402,7 +402,7 @@ sudo systemctl restart apache2
 sudo nano /etc/apache2/conf-available/security.conf
 ```
 
-Modify these settings for better security:
+Modify these settings for better security: (OPTIONAL)
 
 ```apache
 # Hide Apache version
@@ -437,7 +437,7 @@ sudo apache2ctl configtest
 sudo systemctl restart apache2
 ```
 
-### Step 2.6: Configure Apache MPM (Performance)
+### Step 2.6: Configure Apache MPM (Performance) (OPTIONAL)
 
 **MPM (Multi-Processing Module)** determines how Apache handles concurrent connections.
 
