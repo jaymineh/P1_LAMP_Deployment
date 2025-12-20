@@ -607,7 +607,7 @@ mysql --version
 
 **Why MySQL 8.0**: Modern features, better performance, improved security defaults, and active LTS support.
 
-### Step 3.2: Verify MySQL is Running
+### Step 3.2: Verify MySQL is Running fdh
 
 ```bash
 # Check MySQL status
